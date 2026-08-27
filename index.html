@@ -18,6 +18,7 @@
   --round:ui-rounded,-apple-system,"SF Pro Rounded",system-ui,sans-serif;
   --sans:-apple-system,BlinkMacSystemFont,system-ui,"Segoe UI",sans-serif;
   --tabh:calc(60px + env(safe-area-inset-bottom));
+  --namew:150px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0;background:var(--ink);color:var(--text);font-family:var(--sans);overscroll-behavior-y:none}
@@ -210,17 +211,29 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 .selrow{outline:2px solid var(--amber);outline-offset:-2px;border-radius:8px}
 
 /* rank editor */
-.ranktablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+/* snap so a numeric column never rests half-hidden behind the pinned name column —
+   a clipped "22.8" would otherwise read as a plausible "2.8" */
+.ranktablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;
+  scroll-padding-left:var(--namew)}
+.ranktable thead th{scroll-snap-align:start}
+.ranktable th.namecell,.ranktable th.actcell{scroll-snap-align:none}
 .ranktable{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap}
 .ranktable th,.ranktable td{padding:9px 10px;border-bottom:1px solid rgba(42,59,71,.5);text-align:right;font-family:var(--mono)}
 .ranktable thead th{font-family:var(--sans);font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
   color:var(--dim);cursor:pointer;user-select:none}
 .ranktable thead th.on{color:var(--amber)}
+/* the pinned columns sit above the scrolling stats; the shadows mark that edge so a
+   half-covered number reads as clipped rather than as a smaller number */
 .ranktable th.namecell,.ranktable td.namecell{text-align:left;font-family:var(--sans);position:sticky;left:0;
-  background:var(--ink);z-index:1}
+  background:var(--ink);z-index:1;box-shadow:6px 0 7px -4px rgba(0,0,0,.75);
+  width:var(--namew);min-width:var(--namew);max-width:var(--namew)}
+/* keep the reorder / compare controls reachable without scrolling past every stat column */
+.ranktable th.actcell,.ranktable td.actcell{position:sticky;right:0;background:var(--ink);z-index:1;
+  padding-left:8px;white-space:nowrap;box-shadow:-6px 0 7px -4px rgba(0,0,0,.75)}
+.ranktable td.actcell .rbtn{display:inline-flex;vertical-align:middle;margin-left:4px}
 .ranktable tr.selrow td{outline:2px solid var(--amber);outline-offset:-2px}
 .ranktable td.rankcell{color:var(--amber);font-weight:800;font-size:13px}
-.rname{font-size:14px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38vw}
+.rname{font-size:14px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rbtn{width:31px;height:31px;flex:0 0 auto;border-radius:9px;border:1px solid var(--line);background:var(--surface);
   display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted);font-family:var(--round);font-weight:800}
 .rbtn:active{background:var(--amber);color:var(--ink)}
@@ -755,7 +768,7 @@ function renderRanks(){
   document.getElementById('rankchips').innerHTML =
     ['QB','RB','WR','TE','DST'].map(k=>'<button class="chip'+(rankPos===k?' on':'')+'" data-rp="'+k+'">'+posLabel(k)+'</button>').join('')
     + '<button class="chip'+(cmpMode?' on':'')+'" data-cmp="1">'+(cmpMode?'✓ Comparing':'Compare')+'</button>'
-    + (rankSort==='mine' ? '<button class="chip'+(rankEdit?' on':'')+'" data-rankedit="1">'+(rankEdit?'Done':'Edit')+'</button>' : '');
+    + '<button class="chip'+(rankEdit?' on':'')+'" data-rankedit="1">'+(rankEdit?'Done':'Edit')+'</button>';
   /* labels spell out proj vs. last-year so a projection is never mistaken for a stat */
   const cols = [['mine','Rk'],['adp','ADP'],['ppg','Proj PPG'],['ly','LY PPG'],['l8','L8 PPG'],['vorp','VORP']];
   if(rankPos==='RB') cols.push(['car','Proj Car'],['rec','Proj Rec'],['tsh','Proj Tgt%']);
@@ -772,8 +785,10 @@ function renderRanks(){
     if(k==='rec')  return p.rec??'—';
     if(k==='tsh')  return p.tsh!=null? Math.round(p.tsh*100)+'%' : '—';
   };
+  const hasActions = cmpMode || (rankEdit && rankSort==='mine');
   const thead = '<tr><th class="namecell">Player</th>'+
-    cols.map(([k,l])=>'<th'+(rankSort===k?' class="on"':'')+' data-rsort="'+k+'">'+l+'</th>').join('')+'</tr>';
+    cols.map(([k,l])=>'<th'+(rankSort===k?' class="on"':'')+' data-rsort="'+k+'">'+l+'</th>').join('')+
+    (hasActions ? '<th class="actcell"></th>' : '')+'</tr>';
   const rows = list.map(p=>{
     const moveBtns = (rankEdit && rankSort==='mine') ?
       '<button class="rbtn sm up" data-mv="'+esc(p.n)+'" data-d="-1">▲</button>'+
@@ -782,7 +797,7 @@ function renderRanks(){
     return '<tr class="'+(cmp.includes(p.n)?'selrow':'')+'">'+
       '<td class="namecell rmain" data-n="'+esc(p.n)+'"><div class="rname">'+p.n+'</div></td>'+
       cols.map(([k])=>'<td'+(k==='mine'?' class="rankcell"':'')+'>'+cellVal(p,k)+'</td>').join('')+
-      (pickBtn||moveBtns ? '<td>'+pickBtn+moveBtns+'</td>' : '')+
+      (pickBtn||moveBtns ? '<td class="actcell">'+pickBtn+moveBtns+'</td>' : '')+
     '</tr>';
   }).join('');
   document.getElementById('ranklist').innerHTML = list.length ?
@@ -1044,7 +1059,16 @@ document.addEventListener('click', e=>{
   if(t.id==='cmpgo'){ openCompare(); return; }
   if(t.id==='cmprank'){ applyCompareOrder(); return; }
   if(t.dataset.rp){ rankPos=t.dataset.rp; renderRanks(); return; }
-  if(t.dataset.rankedit){ rankEdit=!rankEdit; renderRanks(); return; }
+  if(t.dataset.rankedit){
+    rankEdit = !rankEdit;
+    /* the arrows move a player within your manual order, so editing from a
+       stat-sorted view would be moving them relative to the wrong neighbours —
+       snap back to My Rank first and say so */
+    if(rankEdit && rankSort !== 'mine'){
+      rankSort = 'mine';
+      showToast('Sorted back to <em>My Rank</em> so you can reorder', false, true);
+    }
+    renderRanks(); return; }
   if(t.dataset.rsort){ rankSort=t.dataset.rsort; if(rankSort!=='mine') rankEdit=false; renderRanks(); return; }
   if(t.dataset.mv){ moveRank(t.dataset.mv, parseInt(t.dataset.d,10)); return; }
   if(t.dataset.rmv){ moveMyOrder(t.dataset.rmv, parseInt(t.dataset.rd,10)); return; }
