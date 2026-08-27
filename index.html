@@ -201,11 +201,17 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 .selrow{outline:2px solid var(--amber);outline-offset:-2px;border-radius:8px}
 
 /* rank editor */
-.rankrow{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid rgba(42,59,71,.5)}
-.rnum{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--amber);width:34px;flex:0 0 auto}
-.rmain{flex:1;min-width:0}
-.rname{font-size:14px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rmeta{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:2px}
+.ranktablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.ranktable{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap}
+.ranktable th,.ranktable td{padding:9px 10px;border-bottom:1px solid rgba(42,59,71,.5);text-align:right;font-family:var(--mono)}
+.ranktable thead th{font-family:var(--sans);font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--dim);cursor:pointer;user-select:none}
+.ranktable thead th.on{color:var(--amber)}
+.ranktable th.namecell,.ranktable td.namecell{text-align:left;font-family:var(--sans);position:sticky;left:0;
+  background:var(--ink);z-index:1}
+.ranktable tr.selrow td{outline:2px solid var(--amber);outline-offset:-2px}
+.ranktable td.rankcell{color:var(--amber);font-weight:800;font-size:13px}
+.rname{font-size:14px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38vw}
 .rbtn{width:31px;height:31px;flex:0 0 auto;border-radius:9px;border:1px solid var(--line);background:var(--surface);
   display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted);font-family:var(--round);font-weight:800}
 .rbtn:active{background:var(--amber);color:var(--ink)}
@@ -254,7 +260,6 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 <!-- RANKS -->
 <div class="view" id="v-ranks">
   <div class="chips" id="rankchips"></div>
-  <div class="chips" id="ranksortchips"></div>
   <div id="ranklist"></div>
 </div>
 
@@ -675,7 +680,6 @@ function rankedList(pos){
   list.sort((a,b)=>(mrOf(a)||9999)-(mrOf(b)||9999));
   return list;
 }
-const RANK_SORTS = [['mine','My Rank'],['adp','ADP'],['ppg','Proj PPG'],['ly','Last Yr PPG'],['l8','Last 8 PPG'],['vorp','VORP']];
 /* what's actually rendered — a copy, re-sorted for browsing, that never feeds back into the manual ranks */
 function displayRankList(pos){
   const list = rankedList(pos).slice();
@@ -684,6 +688,8 @@ function displayRankList(pos){
   else if(rankSort==='ly')   list.sort((a,b)=>(b.lyPPG??-999)-(a.lyPPG??-999));
   else if(rankSort==='l8')   list.sort((a,b)=>(b.l8PPG??-999)-(a.l8PPG??-999));
   else if(rankSort==='vorp') list.sort((a,b)=>(vorp(b)??-999)-(vorp(a)??-999));
+  else if(rankSort==='car')  list.sort((a,b)=>(b.car??-999)-(a.car??-999));
+  else if(rankSort==='tsh')  list.sort((a,b)=>(b.tsh??-999)-(a.tsh??-999));
   return list;
 }
 function commitOrder(pos, list){
@@ -704,25 +710,36 @@ function renderRanks(){
     ['QB','RB','WR','TE','DST'].map(k=>'<button class="chip'+(rankPos===k?' on':'')+'" data-rp="'+k+'">'+posLabel(k)+'</button>').join('')
     + '<button class="chip'+(cmpMode?' on':'')+'" data-cmp="1">'+(cmpMode?'✓ Comparing':'Compare')+'</button>'
     + (rankSort==='mine' ? '<button class="chip'+(rankEdit?' on':'')+'" data-rankedit="1">'+(rankEdit?'Done':'Edit')+'</button>' : '');
-  document.getElementById('ranksortchips').innerHTML =
-    RANK_SORTS.map(([k,l])=>'<button class="chip'+(rankSort===k?' on':'')+'" data-rsort="'+k+'">'+l+'</button>').join('');
+  const cols = [['mine','Rk'],['adp','ADP'],['ppg','PPG'],['ly','LY'],['l8','L8'],['vorp','VORP']];
+  if(rankPos==='RB') cols.push(['car','CAR'],['tsh','TGT%']);
+  else if(rankPos==='WR' || rankPos==='TE') cols.push(['tsh','TGT%']);
   const list = displayRankList(rankPos).slice(0,80);
-  document.getElementById('ranklist').innerHTML = list.map((p)=>{
-    const v=vorp(p), rank=mrOf(p);
+  const cellVal = (p,k)=>{
+    if(k==='mine') return mrOf(p)??'—';
+    if(k==='adp')  return fmtPick(p.adp);
+    if(k==='ppg')  return p.ppg??'—';
+    if(k==='ly')   return p.lyPPG??'—';
+    if(k==='l8')   return p.l8PPG??'—';
+    if(k==='vorp') return vorp(p)??'—';
+    if(k==='car')  return p.car??'—';
+    if(k==='tsh')  return p.tsh!=null? Math.round(p.tsh*100)+'%' : '—';
+  };
+  const thead = '<tr><th class="namecell">Player</th>'+
+    cols.map(([k,l])=>'<th'+(rankSort===k?' class="on"':'')+' data-rsort="'+k+'">'+l+'</th>').join('')+'</tr>';
+  const rows = list.map(p=>{
     const moveBtns = (rankEdit && rankSort==='mine') ?
-      '<button class="rbtn up" data-mv="'+esc(p.n)+'" data-d="-1">▲</button>'+
-      '<button class="rbtn down" data-mv="'+esc(p.n)+'" data-d="1">▼</button>' : '';
-    let extra = '';
-    if(rankPos==='RB') extra = ' · '+(p.car??'—')+' car · '+(p.tsh!=null?Math.round(p.tsh*100)+'%':'—')+' tgt shr';
-    else if(rankPos==='WR' || rankPos==='TE') extra = ' · '+(p.tsh!=null?Math.round(p.tsh*100)+'%':'—')+' tgt shr';
-    return '<div class="rankrow'+(cmp.includes(p.n)?' selrow':'')+'">'+
-      '<div class="rnum">'+posLabel(rankPos)+(rank??'—')+'</div>'+
-      '<div class="rmain" data-n="'+esc(p.n)+'"><div class="rname">'+p.n+'</div>'+
-        '<div class="rmeta">ADP '+fmtPick(p.adp)+' · '+(p.ppg??'—')+' ppg · '+(v??'—')+' vorp'+extra+'</div></div>'+
-      (cmpMode ? '<button class="rbtn'+(cmp.includes(p.n)?' sel':'')+'" data-pick="'+esc(p.n)+'">'+(cmp.includes(p.n)?'✓':'⊕')+'</button>' : '')+
-      moveBtns+
-    '</div>';
-  }).join('') || '<div class="empty-state">No players at this position.</div>';
+      '<button class="rbtn sm up" data-mv="'+esc(p.n)+'" data-d="-1">▲</button>'+
+      '<button class="rbtn sm down" data-mv="'+esc(p.n)+'" data-d="1">▼</button>' : '';
+    const pickBtn = cmpMode ? '<button class="rbtn sm'+(cmp.includes(p.n)?' sel':'')+'" data-pick="'+esc(p.n)+'">'+(cmp.includes(p.n)?'✓':'⊕')+'</button>' : '';
+    return '<tr class="'+(cmp.includes(p.n)?'selrow':'')+'">'+
+      '<td class="namecell rmain" data-n="'+esc(p.n)+'"><div class="rname">'+p.n+'</div></td>'+
+      cols.map(([k])=>'<td'+(k==='mine'?' class="rankcell"':'')+'>'+cellVal(p,k)+'</td>').join('')+
+      (pickBtn||moveBtns ? '<td>'+pickBtn+moveBtns+'</td>' : '')+
+    '</tr>';
+  }).join('');
+  document.getElementById('ranklist').innerHTML = list.length ?
+    '<div class="ranktablewrap"><table class="ranktable"><thead>'+thead+'</thead><tbody>'+rows+'</tbody></table></div>' :
+    '<div class="empty-state">No players at this position.</div>';
 }
 
 /* ---------- compare ---------- */
