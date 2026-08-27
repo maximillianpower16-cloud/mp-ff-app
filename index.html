@@ -608,7 +608,7 @@ function renderChips(){
   document.getElementById('chips').innerHTML =
     c.map(([k,l])=>'<button class="chip'+(filter===k?' on':'')+'" data-f="'+k+'">'+l+'</button>').join('')
     + '<button class="chip'+(sortMode!=='vorp'?' on':'')+'" data-s="1">'+
-      ({vorp:'Sort: VORP', adp:'Sort: ADP + tiers', mine:'★ My ranks'}[sortMode])+'</button>'
+      ({vorp:'Sort: VORP', adp:'Sort: ADP + tiers', mine:'★ My ranks', ppg:'Sort: PPG'}[sortMode])+'</button>'
     + '<button class="chip'+(cmpMode?' on':'')+'" data-cmp="1">'+(cmpMode?'✓ Comparing':'Compare')+'</button>';
 }
 
@@ -621,6 +621,7 @@ function renderList(){
   pool = pool.slice();
   if(sortMode==='mine')      pool.sort((a,b)=>(mrOf(a)||999)-(mrOf(b)||999));
   else if(sortMode==='adp')  pool.sort((a,b)=>(a.adp||9999)-(b.adp||9999));
+  else if(sortMode==='ppg')  pool.sort((a,b)=>(b.ppg??-999)-(a.ppg??-999));
   else                       pool.sort((a,b)=>(vorp(b)??-999)-(vorp(a)??-999));
   pool = pool.slice(0,120);
 
@@ -914,7 +915,7 @@ document.addEventListener('click', e=>{
   if(t.dataset.undoname){ const i=picks.findIndex(x=>x.n===t.dataset.undoname);
     if(i>=0){ picks.splice(i,1); REP=replacement(); save(); closeSheet(); render(); } return; }
   if(t.dataset.f){ filter=t.dataset.f; renderChips(); renderList(); return; }
-  if(t.dataset.s){ sortMode = {vorp:'adp', adp:'mine', mine:'vorp'}[sortMode]; renderChips(); renderList(); return; }
+  if(t.dataset.s){ sortMode = {vorp:'adp', adp:'mine', mine:'ppg', ppg:'vorp'}[sortMode]; renderChips(); renderList(); return; }
   if(t.id==='scrim'){ closeSheet(); return; }
   if(t.id==='toastundo'){ undoLast(); return; }
   if(t.id==='undorow'){ undoLast(); return; }
