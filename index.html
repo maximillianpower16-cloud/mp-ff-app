@@ -84,7 +84,7 @@ input{font-size:16px}
 .row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid rgba(42,59,71,.55)}
 .row:active{background:var(--surface)}
 .row.gone{opacity:.32}
-.posc{width:30px;height:30px;flex:0 0 auto;border-radius:8px;display:flex;align-items:center;justify-content:center;
+.posc{min-width:30px;height:30px;padding:0 5px;flex:0 0 auto;border-radius:8px;display:flex;align-items:center;justify-content:center;
   font-size:10px;font-weight:800;letter-spacing:.02em;color:var(--ink)}
 .pQB{background:var(--qb)}.pRB{background:var(--rb)}.pWR{background:var(--wr)}.pTE{background:var(--te)}.pDST{background:var(--dst)}
 .pmain{flex:1;min-width:0}
@@ -591,7 +591,7 @@ function renderRecs(){
   const rows = top.map(t=>{
     const why = [Math.round(t.pa*100)+'% to last till '+fmtPick(nextNextMine()), (t.p.ppg??'—')+' ppg'];
     return '<div class="recrow" data-n="'+esc(t.p.n)+'">'+
-      '<div class="posc p'+t.p.p+'">'+posLabel(t.p.p)+'</div>'+
+      '<div class="posc p'+t.p.p+'">'+posLabel(t.p.p)+(mrOf(t.p)||'')+'</div>'+
       '<div class="recmain"><div class="recname">'+t.p.n+' <span style="color:var(--dim);font-weight:600;font-size:12px">'+(t.p.t||'FA')+'</span></div>'+
       '<div class="recwhy">'+why.join(' · ')+'</div></div>'+
       '<div class="recv">'+t.v+'<span>VORP</span></div></div>';
@@ -631,12 +631,12 @@ function renderList(){
         html+='<div class="tierband">'+(filter==='ALL'? posLabel(p.p)+' ':'')+'Tier '+pt+'</div>'; lastTierKey=tkey;
       }
     }
-    const v=vorp(p), pa=nn? Math.round(pAvail(p,nn)*100):null;
+    const v=vorp(p), pa=nn? Math.round(pAvail(p,nn)*100):null, rank=mrOf(p);
     html+='<div class="row'+(gone.has(p.n)?' gone':'')+(cmp.includes(p.n)?' selrow':'')+'" data-n="'+esc(p.n)+'">'+
-      '<div class="posc p'+p.p+'">'+posLabel(p.p)+'</div>'+
+      '<div class="posc p'+p.p+'">'+posLabel(p.p)+(rank||'')+'</div>'+
       '<div class="pmain"><div class="pname">'+p.n+(p.note?'<span class="dot"></span>':'')+'</div>'+
       '<div class="pmeta">'+fmtPick(p.adp)+' <em>ADP</em> · '+(p.ppg??'—')+' <em>ppg</em>'+
-      (pt?' · <em>T</em>'+pt:'')+(mrOf(p)?' · <em>my</em> '+posLabel(p.p)+mrOf(p):'')+(pa!=null&&!gone.has(p.n)?' · <em>'+pa+'% back</em>':'')+'</div></div>'+
+      (pt?' · <em>T</em>'+pt:'')+(pa!=null&&!gone.has(p.n)?' · <em>'+pa+'% back</em>':'')+'</div></div>'+
       '<div class="pvorp '+(v>0?'pos-v':'neg-v')+'">'+(v??'—')+'<span>VORP</span></div>'+
       (gone.has(p.n) ? '' :
         '<button class="taken-btn" data-take="'+esc(p.n)+'">✕</button>'+
