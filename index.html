@@ -256,6 +256,7 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 <!-- RANKS -->
 <div class="view" id="v-ranks">
   <div class="chips" id="rankchips"></div>
+  <div class="chips" id="ranksortchips"></div>
   <div id="ranklist"></div>
 </div>
 
@@ -331,7 +332,7 @@ let dataMeta = LS.get('ff_datameta', {source:'built in', asOf:'Aug 24 2026', n:P
 let ranks    = LS.get('ff_ranks', {});                 // {playerName: myRank} — manual, survives data refresh
 let myOrder  = LS.get('ff_myorder', []);               // roster priority order — auto-filled as you draft, reorderable
 const mrOf = p => (ranks[p.n] ?? p.mr);
-let cmp = [], cmpMode = false, rankPos = 'QB', rankEdit = false;
+let cmp = [], cmpMode = false, rankPos = 'QB', rankEdit = false, rankSort = 'mine';
 const save = ()=>{ LS.set('ff_cfg',cfg); LS.set('ff_picks',picks); };
 
 /* ---------- data refresh ---------- */
@@ -662,9 +663,21 @@ function customHTML(q){
     '</div></div></div>';
 }
 /* ---------- my rankings (manual, editable) ---------- */
+/* canonical manual-rank order — always used for editing/committing, never re-sorted for display */
 function rankedList(pos){
   const list = PLAYERS.filter(p=>p.p===pos);
   list.sort((a,b)=>(mrOf(a)||9999)-(mrOf(b)||9999));
+  return list;
+}
+const RANK_SORTS = [['mine','My Rank'],['adp','ADP'],['ppg','Proj PPG'],['ly','Last Yr PPG'],['l8','Last 8 PPG'],['vorp','VORP']];
+/* what's actually rendered — a copy, re-sorted for browsing, that never feeds back into the manual ranks */
+function displayRankList(pos){
+  const list = rankedList(pos).slice();
+  if(rankSort==='adp')       list.sort((a,b)=>(a.adp||9999)-(b.adp||9999));
+  else if(rankSort==='ppg')  list.sort((a,b)=>(b.ppg??-999)-(a.ppg??-999));
+  else if(rankSort==='ly')   list.sort((a,b)=>(b.lyPPG??-999)-(a.lyPPG??-999));
+  else if(rankSort==='l8')   list.sort((a,b)=>(b.l8PPG??-999)-(a.l8PPG??-999));
+  else if(rankSort==='vorp') list.sort((a,b)=>(vorp(b)??-999)-(vorp(a)??-999));
   return list;
 }
 function commitOrder(pos, list){
@@ -684,17 +697,22 @@ function renderRanks(){
   document.getElementById('rankchips').innerHTML =
     ['QB','RB','WR','TE','DST'].map(k=>'<button class="chip'+(rankPos===k?' on':'')+'" data-rp="'+k+'">'+posLabel(k)+'</button>').join('')
     + '<button class="chip'+(cmpMode?' on':'')+'" data-cmp="1">'+(cmpMode?'✓ Comparing':'Compare')+'</button>'
-    + '<button class="chip'+(rankEdit?' on':'')+'" data-rankedit="1">'+(rankEdit?'Done':'Edit')+'</button>';
-  const list = rankedList(rankPos).slice(0,80);
-  document.getElementById('ranklist').innerHTML = list.map((p,i)=>{
-    const v=vorp(p), pt=posTier(p);
-    const moveBtns = rankEdit ?
+    + (rankSort==='mine' ? '<button class="chip'+(rankEdit?' on':'')+'" data-rankedit="1">'+(rankEdit?'Done':'Edit')+'</button>' : '');
+  document.getElementById('ranksortchips').innerHTML =
+    RANK_SORTS.map(([k,l])=>'<button class="chip'+(rankSort===k?' on':'')+'" data-rsort="'+k+'">'+l+'</button>').join('');
+  const list = displayRankList(rankPos).slice(0,80);
+  document.getElementById('ranklist').innerHTML = list.map((p)=>{
+    const v=vorp(p), pt=posTier(p), rank=mrOf(p);
+    const moveBtns = (rankEdit && rankSort==='mine') ?
       '<button class="rbtn up" data-mv="'+esc(p.n)+'" data-d="-1">▲</button>'+
       '<button class="rbtn down" data-mv="'+esc(p.n)+'" data-d="1">▼</button>' : '';
+    let extra = '';
+    if(rankPos==='RB') extra = ' · '+(p.car??'—')+' car · '+(p.tsh!=null?Math.round(p.tsh*100)+'%':'—')+' tgt shr';
+    else if(rankPos==='WR' || rankPos==='TE') extra = ' · '+(p.tsh!=null?Math.round(p.tsh*100)+'%':'—')+' tgt shr';
     return '<div class="rankrow'+(cmp.includes(p.n)?' selrow':'')+'">'+
-      '<div class="rnum">'+posLabel(rankPos)+(i+1)+'</div>'+
+      '<div class="rnum">'+posLabel(rankPos)+(rank??'—')+'</div>'+
       '<div class="rmain" data-n="'+esc(p.n)+'"><div class="rname">'+p.n+'</div>'+
-        '<div class="rmeta">ADP '+fmtPick(p.adp)+' · '+(v??'—')+' vorp'+(pt?' · T'+pt:'')+'</div></div>'+
+        '<div class="rmeta">ADP '+fmtPick(p.adp)+' · '+(p.ppg??'—')+' ppg · '+(v??'—')+' vorp'+(pt?' · T'+pt:'')+extra+'</div></div>'+
       '<button class="rbtn'+(cmp.includes(p.n)?' sel':'')+'" data-pick="'+esc(p.n)+'">'+(cmp.includes(p.n)?'✓':'⊕')+'</button>'+
       moveBtns+
     '</div>';
@@ -924,6 +942,7 @@ document.addEventListener('click', e=>{
   if(t.id==='cmprank'){ applyCompareOrder(); return; }
   if(t.dataset.rp){ rankPos=t.dataset.rp; renderRanks(); return; }
   if(t.dataset.rankedit){ rankEdit=!rankEdit; renderRanks(); return; }
+  if(t.dataset.rsort){ rankSort=t.dataset.rsort; if(rankSort!=='mine') rankEdit=false; renderRanks(); return; }
   if(t.dataset.mv){ moveRank(t.dataset.mv, parseInt(t.dataset.d,10)); return; }
   if(t.dataset.rmv){ moveMyOrder(t.dataset.rmv, parseInt(t.dataset.rd,10)); return; }
   if(t.id==='importbtn'){ doImport(); return; }
