@@ -110,8 +110,9 @@ input{font-size:16px}
   border-top:1px solid var(--line);transform:translateY(102%);transition:transform .24s cubic-bezier(.32,.72,0,1);
   padding-bottom:calc(14px + env(safe-area-inset-bottom));max-height:88vh;overflow-y:auto}
 .sheet.on{transform:translateY(0)}
-.grab{width:36px;height:4px;border-radius:2px;background:var(--line);margin:9px auto 4px}
-.shead{padding:6px 18px 12px}
+.grabzone{padding:10px 0 6px;display:flex;justify-content:center;touch-action:none}
+.grab{width:36px;height:4px;border-radius:2px;background:var(--line)}
+.shead{padding:6px 18px 12px;touch-action:none}
 .sname{font-family:var(--round);font-size:24px;font-weight:800;letter-spacing:-.02em}
 .ssub{font-size:12.5px;color:var(--muted);margin-top:3px;font-family:var(--mono)}
 .snote{margin:0 18px 12px;padding:10px 12px;background:rgba(255,180,61,.1);border-left:2px solid var(--amber);
@@ -280,7 +281,7 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 
 <div id="tray"></div>
 <div id="scrim"></div>
-<div class="sheet" id="sheet"><div class="grab"></div><div id="sheetbody"></div></div>
+<div class="sheet" id="sheet"><div class="grabzone"><div class="grab"></div></div><div id="sheetbody"></div></div>
 
 <div id="toast"><div id="toastmsg"></div><button id="toastundo">Undo</button></div>
 
@@ -957,6 +958,35 @@ document.addEventListener('input', e=>{
   if(e.target.dataset.cfg){ const v=parseInt(e.target.value||'0',10);
     if(!isNaN(v)&&v>=0){ cfg[e.target.dataset.cfg]=v; REP=replacement(); save(); render(); } }
 });
+
+/* swipe-down-to-dismiss on the bottom sheet, grabbed from the handle or the header */
+(function(){
+  const sheetEl = document.getElementById('sheet');
+  let startY=null, dy=0, dragging=false, pid=null;
+  const isHandle = t => t && t.closest && (t.closest('.grabzone') || t.closest('.shead'));
+  sheetEl.addEventListener('pointerdown', e=>{
+    if(!isHandle(e.target)) return;
+    dragging=true; startY=e.clientY; dy=0; pid=e.pointerId;
+    if(sheetEl.setPointerCapture) sheetEl.setPointerCapture(pid);
+    sheetEl.style.transition='none';
+  });
+  sheetEl.addEventListener('pointermove', e=>{
+    if(!dragging || e.pointerId!==pid) return;
+    dy = Math.max(0, e.clientY - startY);
+    sheetEl.style.transform='translateY('+dy+'px)';
+  });
+  const endDrag = e=>{
+    if(!dragging || (e && e.pointerId!==pid)) return;
+    dragging=false;
+    sheetEl.style.transition='';
+    sheetEl.style.transform='';
+    if(dy>90) closeSheet();
+    dy=0;
+  };
+  sheetEl.addEventListener('pointerup', endDrag);
+  sheetEl.addEventListener('pointercancel', endDrag);
+})();
+
 render();
 loadRemote();
 setInterval(loadRemote, 6*60*60*1000);   // re-check a few times a day if the tab stays open
