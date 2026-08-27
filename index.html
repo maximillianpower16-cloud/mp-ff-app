@@ -213,8 +213,6 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 .rbtn.up{color:var(--up);border-color:rgba(144,238,144,.35)}
 .rbtn.down{color:var(--down);border-color:rgba(240,128,128,.35)}
 .rbtn.sm{width:26px;height:26px;font-size:12px}
-.importbox{width:100%;min-height:104px;padding:11px;border-radius:11px;background:var(--ink);border:1px solid var(--line);
-  color:var(--text);font-family:var(--mono);font-size:12px;line-height:1.4}
 .status{margin:12px;padding:12px 13px;background:var(--surface);border:1px solid var(--line);border-radius:13px;
   font-size:12.5px;line-height:1.5;color:var(--muted)}
 .status b{color:var(--text);font-weight:700}
@@ -272,9 +270,11 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 <div class="view" id="v-set">
   <div id="setfields"></div>
   <div id="datastatus"></div>
-  <div style="padding:0 18px 6px"><div class="slotlab" style="margin-bottom:7px">Paste a FantasyPros CSV export</div>
-    <textarea class="importbox" id="importbox" placeholder="Paste the whole CSV here — rankings, ADP or projections export. Columns are detected automatically."></textarea>
-    <div class="acts" style="padding:8px 0 0"><button class="act mine" id="importbtn">Update players</button></div>
+  <div style="padding:0 18px 6px"><div class="slotlab" style="margin-bottom:7px">Upload a FantasyPros CSV export</div>
+    <div style="font-size:11.5px;color:var(--dim);line-height:1.4;margin-bottom:9px">Rankings, ADP, or projections export — columns are detected automatically.</div>
+    <input type="file" id="importfile" accept=".csv,text/csv" style="display:none">
+    <div class="acts" style="padding:0"><button class="act mine" id="importfilebtn">Choose CSV file…</button></div>
+    <div id="importfilename" style="font-size:12px;color:var(--muted);margin-top:9px;display:none"></div>
   </div>
   <div class="acts" style="margin-top:16px"><button class="act undo" id="resetbtn">Reset draft</button></div>
   <div class="fineprint" id="fineprint"></div>
@@ -341,6 +341,11 @@ function mergeRows(rows, meta){
   for(const r of rows){
     if(!r.name) continue;
     let p = byKey[nkey(r.name)];
+    /* defenses are commonly exported as "HOU DST" etc — that never fuzzy-matches
+       a friendly name like "Texans DST", so fall back to matching by team */
+    if(!p && r.team && (r.pos==='DST' || /\bD\/?ST\b/i.test(r.name))){
+      p = PLAYERS.find(x=>x.p==='DST' && x.t===r.team);
+    }
     if(!p){
       if(!r.pos) continue;
       p = {n:r.name, p:r.pos, t:r.team||'', adp:null, tier:null, mr:null, pts:null, ppg:null};
@@ -386,16 +391,19 @@ function parseCSV(text){
   const iName = find('PLAYER NAME','PLAYER','NAME');
   if(iName<0) return null;
   const iAdp=find('AVG','ADP'), iRk=find('RK','RANK'), iTier=find('TIER'),
-        iPts=find('FPTS','PROJ PTS','POINTS'), iPos=find('POS'), iTeam=find('TEAM'), iBye=find('BYE');
+        iPts=find('FPTS','PROJ PTS','POINTS','FANTASYPTS'), iPos=find('POS'), iTeam=find('TEAM'), iBye=find('BYE');
   const num = v => { const f=parseFloat(String(v).replace(/[^0-9.\-]/g,'')); return isNaN(f)?null:f; };
+  const TEAM_ALIAS = {JAC:'JAX', WSH:'WAS'};
   const rows=[];
   for(let i=hi+1;i<lines.length;i++){
     const c = cut(lines[i]); if(c.length<2) continue;
     let name = (c[iName]||'').replace(/\s+\([^)]*\)/,'').trim();
     if(!name || /^player/i.test(name)) continue;
     let pos = iPos>=0 ? (c[iPos]||'').replace(/[0-9]/g,'').trim().toUpperCase() : null;
+    if(!pos && /\bD\/?ST\b/i.test(name)) pos = 'DST';
     let team = iTeam>=0 ? (c[iTeam]||'').trim().toUpperCase() : null;
     if(!team){ const m = name.match(/\s([A-Z]{2,3})$/); if(m){ team=m[1]; name=name.slice(0,-m[0].length).trim(); } }
+    if(team) team = TEAM_ALIAS[team] || team;
     let adp = iAdp>=0 ? num(c[iAdp]) : null;
     if(adp==null && iRk>=0) adp = num(c[iRk]);
     rows.push({name, pos:pos||null, team:team||null, adp,
@@ -405,12 +413,11 @@ function parseCSV(text){
   }
   return rows.length? rows : null;
 }
-function doImport(){
-  const box = document.getElementById('importbox');
-  const rows = parseCSV(box.value||'');
-  if(!rows){ showToast('Could not read that. It needs a header row with a player-name column.', false, true); return; }
-  const {hit, added} = mergeRows(rows, {source:'CSV paste', asOf:new Date().toLocaleDateString()});
-  box.value=''; render(); renderSet();
+function doImportText(text, filename){
+  const rows = parseCSV(text||'');
+  if(!rows){ showToast('Could not read that file. It needs a header row with a player-name column.', false, true); return; }
+  const {hit, added} = mergeRows(rows, {source: filename? 'CSV: '+filename : 'CSV upload', asOf:new Date().toLocaleDateString()});
+  render(); renderSet();
   showToast('Updated <em>'+hit+' matched, '+added+' new</em>', true, true);
 }
 
@@ -949,7 +956,7 @@ document.addEventListener('click', e=>{
   if(t.dataset.rsort){ rankSort=t.dataset.rsort; if(rankSort!=='mine') rankEdit=false; renderRanks(); return; }
   if(t.dataset.mv){ moveRank(t.dataset.mv, parseInt(t.dataset.d,10)); return; }
   if(t.dataset.rmv){ moveMyOrder(t.dataset.rmv, parseInt(t.dataset.rd,10)); return; }
-  if(t.id==='importbtn'){ doImport(); return; }
+  if(t.id==='importfilebtn'){ document.getElementById('importfile').click(); return; }
   if(t.dataset.addtaken){ draftCustom(t.dataset.addtaken,false); return; }
   if(t.dataset.addmine){ draftCustom(t.dataset.addmine,true); return; }
   if(t.id==='resetbtn'){
@@ -976,6 +983,17 @@ document.getElementById('search').addEventListener('input', e=>{
 });
 document.getElementById('search').addEventListener('keydown', e=>{
   if(e.key==='Enter'){ const first=document.querySelector('#list .row'); if(first){ openSheet(first.dataset.n); e.target.blur(); } }
+});
+document.getElementById('importfile').addEventListener('change', e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const nameEl = document.getElementById('importfilename');
+  nameEl.textContent = file.name; nameEl.style.display = 'block';
+  const reader = new FileReader();
+  reader.onload = ()=> doImportText(reader.result, file.name);
+  reader.onerror = ()=> showToast('Could not read that file.', false, true);
+  reader.readAsText(file);
+  e.target.value = '';
 });
 document.addEventListener('input', e=>{
   if(e.target.dataset.cfg){ const v=parseInt(e.target.value||'0',10);
