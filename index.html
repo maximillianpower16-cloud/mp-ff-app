@@ -627,10 +627,9 @@ function renderList(){
   const nn=nextNextMine();
   for(const p of pool){
     const pt = posTier(p);
-    if(!query && sortMode==='adp' && pt!=null){
-      const tkey = p.p+'|'+pt;
-      if(tkey!==lastTierKey){
-        html+='<div class="tierband">'+(filter==='ALL'? posLabel(p.p)+' ':'')+'Tier '+pt+'</div>'; lastTierKey=tkey;
+    if(!query && sortMode==='adp' && filter!=='ALL' && pt!=null){
+      if(pt!==lastTierKey){
+        html+='<div class="tierband">Tier '+pt+'</div>'; lastTierKey=pt;
       }
     }
     const v=vorp(p), pa=nn? Math.round(pAvail(p,nn)*100):null, rank=mrOf(p);
