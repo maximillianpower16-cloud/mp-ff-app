@@ -712,7 +712,7 @@ function renderRanks(){
       '<div class="rnum">'+posLabel(rankPos)+(rank??'—')+'</div>'+
       '<div class="rmain" data-n="'+esc(p.n)+'"><div class="rname">'+p.n+'</div>'+
         '<div class="rmeta">ADP '+fmtPick(p.adp)+' · '+(p.ppg??'—')+' ppg · '+(v??'—')+' vorp'+(pt?' · T'+pt:'')+extra+'</div></div>'+
-      '<button class="rbtn'+(cmp.includes(p.n)?' sel':'')+'" data-pick="'+esc(p.n)+'">'+(cmp.includes(p.n)?'✓':'⊕')+'</button>'+
+      (cmpMode ? '<button class="rbtn'+(cmp.includes(p.n)?' sel':'')+'" data-pick="'+esc(p.n)+'">'+(cmp.includes(p.n)?'✓':'⊕')+'</button>' : '')+
       moveBtns+
     '</div>';
   }).join('') || '<div class="empty-state">No players at this position.</div>';
@@ -845,9 +845,14 @@ function historyHTML(){
       '<div class="runtrack"><div class="runfill" style="width:'+(counts[k]/max*100)+'%;background:'+cols[k]+'"></div></div>'+
       '<div class="runn">'+counts[k]+'</div></div>').join('')+'</div>';
   h += picks.length?
-    picks.map((p,i)=>'<div class="logrow"><div class="logpick">'+fmtPick(i+1)+'</div>'+
-      '<div class="logname'+(p.mine?' mine':'')+'">'+p.n+(p.mine?' ★':'')+'</div>'+
-      (i===picks.length-1?'<button class="mine-btn" id="undorow">↺</button>':'')+'</div>').reverse().join('')
+    picks.map((p,i)=>{
+      const pl = byName[p.n], team = pl && pl.t ? pl.t : (p.cp||'');
+      return '<div class="logrow"><div class="logpick">'+fmtPick(i+1)+'</div>'+
+        '<div class="logname'+(p.mine?' mine':'')+'">'+p.n+
+        (team?' <span style="color:var(--dim);font-weight:600;font-size:12px">'+team+'</span>':'')+
+        (p.mine?' ★':'')+'</div>'+
+        (i===picks.length-1?'<button class="mine-btn" id="undorow">↺</button>':'')+'</div>';
+    }).reverse().join('')
     : '<div class="empty-state">No picks yet. Tap a player to knock him off the board, or ＋ if you took him.</div>';
   return h;
 }
