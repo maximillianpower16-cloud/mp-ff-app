@@ -45,9 +45,13 @@ input{font-size:16px}
 /* ---------- search ---------- */
 #searchwrap{position:sticky;top:0;z-index:30;padding:9px 12px;background:var(--ink);border-bottom:1px solid var(--line);
   display:flex;gap:8px;align-items:center}
-#search{flex:1;min-width:0;padding:11px 13px;border-radius:11px;background:var(--surface);border:1px solid var(--line);
+.searchbox{position:relative;flex:1;min-width:0}
+#search{width:100%;padding:11px 34px 11px 13px;border-radius:11px;background:var(--surface);border:1px solid var(--line);
   color:var(--text);font-size:16px;font-weight:500}
 #search::placeholder{color:var(--dim)}
+#clearsearch{position:absolute;right:5px;top:50%;transform:translateY(-50%);width:28px;height:28px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:13px;font-weight:700}
+#clearsearch:active{background:var(--surface2);color:var(--text)}
 #historybtn{width:44px;height:44px;flex:0 0 auto;border-radius:11px;background:var(--surface);border:1px solid var(--line);
   display:flex;align-items:center;justify-content:center;color:var(--muted)}
 #historybtn svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -230,11 +234,15 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 
 <!-- DRAFT -->
 <div class="view on" id="v-draft">
-  <div id="searchwrap"><input id="search" placeholder="Search player…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+  <div id="searchwrap">
+    <div class="searchbox">
+      <input id="search" placeholder="Search player…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <button id="clearsearch" aria-label="Clear search" style="display:none">✕</button>
+    </div>
     <button id="historybtn" aria-label="History"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></button>
   </div>
-  <div id="recbox"></div>
   <div class="chips" id="chips"></div>
+  <div id="recbox"></div>
   <div id="list"></div>
 </div>
 
@@ -556,6 +564,7 @@ function renderClock(){
 }
 
 let recCollapsed = LS.get('ff_reccollapsed', false);
+let slotsCollapsed = LS.get('ff_slotscollapsed', true);
 function renderRecs(){
   const box=document.getElementById('recbox'), cur=currentPick(), nm=nextMine();
   if(query){ box.innerHTML=''; return; }
@@ -829,10 +838,14 @@ function renderSet(){
     (m.matched!=null? ' <br><b>Last update:</b> '+m.matched+' matched, '+m.added+' added':'')+
     '<br><br>The app checks <b>data/players.json</b> on load — a GitHub Action rewrites that file every morning. '+
     'If it is missing or you are offline, the built-in snapshot is used and nothing breaks.</div>';
-  const f=[['teams','Teams'],['slot','My draft slot'],['rounds','Rounds'],
-           ['QB','QB slots'],['RB','RB slots'],['WR','WR slots'],['TE','TE slots'],['FLEX','FLEX'],['SF','SUPERFLEX'],['DST','DEF slots'],['BENCH','Bench spots']];
-  document.getElementById('setfields').innerHTML = f.map(([k,l])=>
-    '<div class="setrow"><label>'+l+'</label><input type="number" inputmode="numeric" data-cfg="'+k+'" value="'+cfg[k]+'"></div>').join('');
+  const draftFields=[['teams','Teams'],['slot','My draft slot'],['rounds','Rounds']];
+  const slotFields=[['QB','QB slots'],['RB','RB slots'],['WR','WR slots'],['TE','TE slots'],['FLEX','FLEX'],['SF','SUPERFLEX'],['DST','DEF slots'],['BENCH','Bench spots']];
+  const rowHTML = ([k,l])=>'<div class="setrow"><label>'+l+'</label><input type="number" inputmode="numeric" data-cfg="'+k+'" value="'+cfg[k]+'"></div>';
+  const chev = slotsCollapsed ? '▸' : '▾';
+  document.getElementById('setfields').innerHTML = draftFields.map(rowHTML).join('')
+    + '<div class="setrow" id="slotstoggle" style="cursor:pointer"><label>Roster slots</label>'+
+      '<span style="color:var(--dim);font-family:var(--round);font-weight:800;font-size:16px">'+chev+'</span></div>'
+    + (slotsCollapsed ? '' : slotFields.map(rowHTML).join(''));
   document.getElementById('fineprint').innerHTML =
     'Replacement level is recalculated from these settings every pick — VORP is what makes a QB comparable to a RB in superflex.<br><br>'+
     'Availability % is modeled from ADP with a spread that widens later in the draft, because your four ADP snapshots agree too closely to trust on their own late.<br><br>'+
@@ -878,6 +891,9 @@ document.addEventListener('click', e=>{
   if(takeBtn){ e.stopPropagation(); draftPlayer(takeBtn.dataset.take, false); return; }
   if(t.closest('[data-toggle-rec]')){ recCollapsed=!recCollapsed; LS.set('ff_reccollapsed', recCollapsed); renderRecs(); return; }
   if(t.closest('#historybtn')){ openHistory(); return; }
+  if(t.id==='clearsearch'){ const inp=document.getElementById('search'); inp.value=''; query='';
+    t.style.display='none'; renderRecs(); renderList(); inp.focus(); return; }
+  if(t.closest('#slotstoggle')){ slotsCollapsed=!slotsCollapsed; LS.set('ff_slotscollapsed', slotsCollapsed); renderSet(); return; }
   const rmain=t.closest('.rmain');
   if(rmain && rmain.dataset.n){ cmpMode? toggleCmp(rmain.dataset.n) : openSheet(rmain.dataset.n); return; }
   const row=t.closest('.row,.recrow');
@@ -920,7 +936,11 @@ document.addEventListener('click', e=>{
     if(tab.dataset.v!=='ranks' && rankEdit){ rankEdit=false; renderRanks(); }
     window.scrollTo(0,0); return; }
 });
-document.getElementById('search').addEventListener('input', e=>{ query=e.target.value.trim(); renderRecs(); renderList(); });
+document.getElementById('search').addEventListener('input', e=>{
+  query=e.target.value.trim();
+  document.getElementById('clearsearch').style.display = e.target.value ? 'flex' : 'none';
+  renderRecs(); renderList();
+});
 document.getElementById('search').addEventListener('keydown', e=>{
   if(e.key==='Enter'){ const first=document.querySelector('#list .row'); if(first){ openSheet(first.dataset.n); e.target.blur(); } }
 });
