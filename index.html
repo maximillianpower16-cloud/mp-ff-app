@@ -1011,8 +1011,8 @@ function openSheet(name){
     (posTier(p)?' · tier '+posTier(p):'')+(p.bye?' · bye '+p.bye:'')+(p.flag?' · '+p.flag:'')+'</div></div>';
   if(p.note) h+='<div class="snote">'+p.note+(p.dlt?' <b>('+(p.dlt>0?'+':'')+p.dlt+' proj pts)</b>':'')+'</div>';
   h+='<div class="grid">'+
-    stat(v??'—','VORP')+stat(fmt1(p.ppg),'proj ppg')+stat(p.pts??'—','proj pts')+
-    stat(fmt1(p.lyPPG),'last yr ppg')+stat(fmt1(p.l8PPG),'last 8 ppg')+stat(p.pg??'—','proj games')+
+    stat(v??'—','VORP')+stat(fmt1(p.lyPPG),'last yr ppg')+stat(fmt1(p.l8PPG),'last 8 ppg')+
+    stat(p.pg??'—','proj games')+stat(p.pts??'—','proj pts')+stat(fmt1(p.ppg),'proj ppg')+
     stat(nn?Math.round(pAvail(p,nn)*100)+'%':'—','back at '+fmtPick(nn))+
     stat(gone?'—':waitCost(p),'cost to wait')+stat(p.ol??'—','O-line')+
     stat(p.tsh!=null?(p.tsh*100).toFixed(1)+'%':'—','proj tgt shr')+stat(p.car??'—','proj carries')+stat(p.age??'—','age')+
