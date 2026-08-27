@@ -58,10 +58,9 @@ input{font-size:16px}
 /* ---------- recommendation ---------- */
 .rec{margin:4px 12px 12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .rechead{padding:9px 13px 7px;font-size:10px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;
-  color:var(--dim);border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+  color:var(--dim);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;cursor:pointer}
 .recrow{display:flex;align-items:center;gap:11px;padding:11px 13px;border-bottom:1px solid var(--line)}
 .recrow:last-child{border-bottom:none}
-.recrank{font-family:var(--round);font-size:15px;font-weight:800;color:var(--dim);width:14px;flex:0 0 auto}
 .recmain{flex:1;min-width:0}
 .recname{font-size:15px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .recwhy{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.3}
@@ -315,7 +314,7 @@ let dataMeta = LS.get('ff_datameta', {source:'built in', asOf:'Aug 24 2026', n:P
 let ranks    = LS.get('ff_ranks', {});                 // {playerName: myRank} — manual, survives data refresh
 let myOrder  = LS.get('ff_myorder', []);               // roster priority order — auto-filled as you draft, reorderable
 const mrOf = p => (ranks[p.n] ?? p.mr);
-let cmp = [], cmpMode = false, rankPos = 'QB';
+let cmp = [], cmpMode = false, rankPos = 'QB', rankEdit = false;
 const save = ()=>{ LS.set('ff_cfg',cfg); LS.set('ff_picks',picks); };
 
 /* ---------- data refresh ---------- */
@@ -555,26 +554,36 @@ function renderClock(){
   document.getElementById('pips').innerHTML = pips.join('');
 }
 
+let recCollapsed = LS.get('ff_reccollapsed', false);
 function renderRecs(){
   const box=document.getElementById('recbox'), cur=currentPick(), nm=nextMine();
   if(query){ box.innerHTML=''; return; }
   const onClock = (nm===cur);
-  const pool = available().filter(p=>vorp(p)!==null).sort((a,b)=>vorp(b)-vorp(a)).slice(0,14);
-  if(!pool.length){ box.innerHTML=''; return; }
-  const top = pool.slice(0,3).map(p=>({p, v:vorp(p), w:waitCost(p), pa:pAvail(p, nextNextMine())}));
-  const rows = top.map((t,i)=>{
+  const avail = available();
+  const top = ['QB','RB','WR','TE','DST'].map(pos=>{
+    const cands = avail.filter(p=>p.p===pos && vorp(p)!==null);
+    if(!cands.length) return null;
+    cands.sort((a,b)=>(mrOf(a)||9999)-(mrOf(b)||9999));
+    const p = cands[0];
+    return {p, v:vorp(p), w:waitCost(p), pa:pAvail(p, nextNextMine())};
+  }).filter(Boolean);
+  if(!top.length){ box.innerHTML=''; return; }
+  const chev = recCollapsed ? '▸' : '▾';
+  const head = '<div class="rechead" data-toggle-rec="1"><span>'+(onClock?'Take one of these':'If the pick came to you now')+'</span><span>'+chev+' '+fmtPick(cur)+'</span></div>';
+  if(recCollapsed){ box.innerHTML = '<div class="rec">'+head+'</div>'; return; }
+  const rows = top.map(t=>{
     const why = [];
     if(t.w>12) why.push('<b>lose '+t.w+' pts</b> if you wait');
     else if(t.pa>.72) why.push(Math.round(t.pa*100)+'% likely back next round');
     else why.push(Math.round(t.pa*100)+'% to last till '+fmtPick(nextNextMine()));
     if(posTier(t.p)) why.push('tier '+posTier(t.p));
     return '<div class="recrow" data-n="'+esc(t.p.n)+'">'+
-      '<div class="recrank">'+(i+1)+'</div>'+
-      '<div class="recmain"><div class="recname">'+t.p.n+' <span style="color:var(--dim);font-weight:600;font-size:12px">'+t.p.p+' · '+(t.p.t||'FA')+'</span></div>'+
+      '<div class="posc p'+t.p.p+'">'+posLabel(t.p.p)+'</div>'+
+      '<div class="recmain"><div class="recname">'+t.p.n+' <span style="color:var(--dim);font-weight:600;font-size:12px">'+(t.p.t||'FA')+'</span></div>'+
       '<div class="recwhy">'+why.join(' · ')+'</div></div>'+
       '<div class="recv">'+t.v+'<span>VORP</span></div></div>';
   }).join('');
-  box.innerHTML='<div class="rec"><div class="rechead"><span>'+(onClock?'Take one of these':'If the pick came to you now')+'</span><span>'+fmtPick(cur)+'</span></div>'+rows+'</div>';
+  box.innerHTML='<div class="rec">'+head+rows+'</div>';
 }
 
 function renderChips(){
@@ -659,17 +668,20 @@ function moveRank(name, dir){
 function renderRanks(){
   document.getElementById('rankchips').innerHTML =
     ['QB','RB','WR','TE','DST'].map(k=>'<button class="chip'+(rankPos===k?' on':'')+'" data-rp="'+k+'">'+posLabel(k)+'</button>').join('')
-    + '<button class="chip'+(cmpMode?' on':'')+'" data-cmp="1">'+(cmpMode?'✓ Comparing':'Compare')+'</button>';
+    + '<button class="chip'+(cmpMode?' on':'')+'" data-cmp="1">'+(cmpMode?'✓ Comparing':'Compare')+'</button>'
+    + '<button class="chip'+(rankEdit?' on':'')+'" data-rankedit="1">'+(rankEdit?'Done':'Edit')+'</button>';
   const list = rankedList(rankPos).slice(0,80);
   document.getElementById('ranklist').innerHTML = list.map((p,i)=>{
     const v=vorp(p), pt=posTier(p);
+    const moveBtns = rankEdit ?
+      '<button class="rbtn up" data-mv="'+esc(p.n)+'" data-d="-1">▲</button>'+
+      '<button class="rbtn down" data-mv="'+esc(p.n)+'" data-d="1">▼</button>' : '';
     return '<div class="rankrow'+(cmp.includes(p.n)?' selrow':'')+'">'+
       '<div class="rnum">'+posLabel(rankPos)+(i+1)+'</div>'+
       '<div class="rmain" data-n="'+esc(p.n)+'"><div class="rname">'+p.n+'</div>'+
         '<div class="rmeta">ADP '+fmtPick(p.adp)+' · '+(v??'—')+' vorp'+(pt?' · T'+pt:'')+'</div></div>'+
       '<button class="rbtn'+(cmp.includes(p.n)?' sel':'')+'" data-pick="'+esc(p.n)+'">'+(cmp.includes(p.n)?'✓':'⊕')+'</button>'+
-      '<button class="rbtn up" data-mv="'+esc(p.n)+'" data-d="-1">▲</button>'+
-      '<button class="rbtn down" data-mv="'+esc(p.n)+'" data-d="1">▼</button>'+
+      moveBtns+
     '</div>';
   }).join('') || '<div class="empty-state">No players at this position.</div>';
 }
@@ -853,6 +865,7 @@ document.addEventListener('click', e=>{
   if(mineBtn){ e.stopPropagation(); draftPlayer(mineBtn.dataset.mine, true); return; }
   const takeBtn=t.closest('[data-take]');
   if(takeBtn){ e.stopPropagation(); draftPlayer(takeBtn.dataset.take, false); return; }
+  if(t.closest('[data-toggle-rec]')){ recCollapsed=!recCollapsed; LS.set('ff_reccollapsed', recCollapsed); renderRecs(); return; }
   const rmain=t.closest('.rmain');
   if(rmain && rmain.dataset.n){ cmpMode? toggleCmp(rmain.dataset.n) : openSheet(rmain.dataset.n); return; }
   const row=t.closest('.row,.recrow');
@@ -872,6 +885,7 @@ document.addEventListener('click', e=>{
   if(t.id==='cmpgo'){ openCompare(); return; }
   if(t.id==='cmprank'){ applyCompareOrder(); return; }
   if(t.dataset.rp){ rankPos=t.dataset.rp; renderRanks(); return; }
+  if(t.dataset.rankedit){ rankEdit=!rankEdit; renderRanks(); return; }
   if(t.dataset.mv){ moveRank(t.dataset.mv, parseInt(t.dataset.d,10)); return; }
   if(t.dataset.rmv){ moveMyOrder(t.dataset.rmv, parseInt(t.dataset.rd,10)); return; }
   if(t.id==='importbtn'){ doImport(); return; }
@@ -891,6 +905,7 @@ document.addEventListener('click', e=>{
   if(tab){ document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===tab));
     document.querySelectorAll('.view').forEach(v=>v.classList.toggle('on', v.id==='v-'+tab.dataset.v));
     if(tab.dataset.v==='set') renderSet();
+    if(tab.dataset.v!=='ranks' && rankEdit){ rankEdit=false; renderRanks(); }
     window.scrollTo(0,0); return; }
 });
 document.getElementById('search').addEventListener('input', e=>{ query=e.target.value.trim(); renderRecs(); renderList(); });
