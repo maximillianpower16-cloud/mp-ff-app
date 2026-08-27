@@ -153,6 +153,12 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
   padding:1px 5px;border-radius:8px;font-family:var(--mono)}
 
 /* ---------- roster / log ---------- */
+.teamtotal{margin:12px 12px 0;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:13px;
+  display:flex;align-items:center;justify-content:space-between}
+.teamtotal b{display:block;font-family:var(--round);font-size:30px;font-weight:800;color:var(--amber);line-height:1}
+.teamtotal b span{display:block;font-size:10px;font-weight:700;color:var(--dim);text-transform:uppercase;
+  letter-spacing:.07em;margin-top:4px;font-family:var(--sans)}
+.teamtotal-sub{font-size:12px;font-weight:600;color:var(--muted);text-align:right;line-height:1.4}
 .slots{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:12px}
 .slot{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 12px;min-height:62px}
 .slot.empty{border-style:dashed;opacity:.6}
@@ -254,6 +260,7 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 
 <!-- TEAM -->
 <div class="view" id="v-team">
+  <div id="teamtotal"></div>
   <div class="slots" id="slots"></div>
   <div id="needs"></div>
 </div>
@@ -795,6 +802,11 @@ function groupedSlotsHTML(list){
 }
 function renderTeam(){
   const {slots,bench,extra}=myRoster();
+  const filled = slots.filter(s=>s.p);
+  const total = filled.reduce((sum,s)=> sum + (s.p.ppg||0), 0);
+  document.getElementById('teamtotal').innerHTML =
+    '<div class="teamtotal"><b>'+total.toFixed(1)+'<span>est. pts / week</span></b>'+
+    '<div class="teamtotal-sub">'+filled.length+'/'+slots.length+'<br>starters filled</div></div>';
   document.getElementById('slots').innerHTML = groupedSlotsHTML(slots);
   const need = slots.filter(s=>!s.p).map(s=>s.lab);
   let h='<div class="tierband">Bench</div><div class="slots">'+bench.map(s=>slotCard(s,false)).join('')+'</div>';
