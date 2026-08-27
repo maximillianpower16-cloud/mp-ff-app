@@ -582,18 +582,14 @@ function renderRecs(){
     if(!cands.length) return null;
     cands.sort((a,b)=>(mrOf(a)||9999)-(mrOf(b)||9999));
     const p = cands[0];
-    return {p, v:vorp(p), w:waitCost(p), pa:pAvail(p, nextNextMine())};
+    return {p, v:vorp(p), pa:pAvail(p, nextNextMine())};
   }).filter(Boolean);
   if(!top.length){ box.innerHTML=''; return; }
   const chev = recCollapsed ? '▸' : '▾';
   const head = '<div class="rechead" data-toggle-rec="1"><span>'+(onClock?'Take one of these':'If the pick came to you now')+'</span><span>'+chev+' '+fmtPick(cur)+'</span></div>';
   if(recCollapsed){ box.innerHTML = '<div class="rec">'+head+'</div>'; return; }
   const rows = top.map(t=>{
-    const why = [];
-    if(t.w>12) why.push('<b>lose '+t.w+' pts</b> if you wait');
-    else if(t.pa>.72) why.push(Math.round(t.pa*100)+'% likely back next round');
-    else why.push(Math.round(t.pa*100)+'% to last till '+fmtPick(nextNextMine()));
-    if(posTier(t.p)) why.push('tier '+posTier(t.p));
+    const why = [Math.round(t.pa*100)+'% to last till '+fmtPick(nextNextMine()), (t.p.ppg??'—')+' ppg'];
     return '<div class="recrow" data-n="'+esc(t.p.n)+'">'+
       '<div class="posc p'+t.p.p+'">'+posLabel(t.p.p)+'</div>'+
       '<div class="recmain"><div class="recname">'+t.p.n+' <span style="color:var(--dim);font-weight:600;font-size:12px">'+(t.p.t||'FA')+'</span></div>'+
