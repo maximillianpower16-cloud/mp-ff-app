@@ -233,14 +233,19 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 .ranktable td.actcell .rbtn{display:inline-flex;vertical-align:middle;margin-left:4px}
 .ranktable tr.selrow td{outline:2px solid var(--amber);outline-offset:-2px}
 .ranktable td.rankcell{color:var(--amber);font-weight:800;font-size:13px}
+/* edit controls flanking the rank number, spaced so the two arrows read as
+   separate targets rather than one stacked control */
+.rkedit{display:flex;align-items:center;justify-content:flex-end;gap:10px}
+.rkedit .rknum{min-width:22px;text-align:center;color:var(--amber);font-weight:800}
+.rkedit .rbtn{flex:0 0 auto}
 .rname{font-size:14px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rbtn{width:31px;height:31px;flex:0 0 auto;border-radius:9px;border:1px solid var(--line);background:var(--surface);
   display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted);font-family:var(--round);font-weight:800}
 .rbtn:active{background:var(--amber);color:var(--ink)}
 .rbtn.sel{background:var(--amber);color:var(--ink);border-color:var(--amber)}
-.rbtn.up{color:var(--up);border-color:rgba(144,238,144,.35)}
-.rbtn.down{color:var(--down);border-color:rgba(240,128,128,.35)}
-.rbtn.sm{width:26px;height:26px;font-size:12px}
+.rbtn.up{color:var(--up);border-color:rgba(144,238,144,.45);background:rgba(144,238,144,.12)}
+.rbtn.down{color:var(--down);border-color:rgba(240,128,128,.45);background:rgba(240,128,128,.12)}
+.rbtn.sm{width:30px;height:30px;font-size:12px}
 .status{margin:12px;padding:12px 13px;background:var(--surface);border:1px solid var(--line);border-radius:13px;
   font-size:12.5px;line-height:1.5;color:var(--muted)}
 .status b{color:var(--text);font-weight:700}
@@ -607,11 +612,15 @@ function undoLast(){
   const p = picks.pop(); REP=replacement(); save(); hideToast(); render();
   showToast(p.n+' put back', false, true);
 }
-function showToast(msg, mine, noUndo){
+/* what the toast's Undo button reverses — defaults to the last pick, but a
+   caller can pass its own so e.g. a rank change undoes the rank change */
+let undoAction = null;
+function showToast(msg, mine, noUndo, onUndo){
   if(!msg) return;
   const t=document.getElementById('toast');
   document.getElementById('toastmsg').innerHTML = msg;
   document.getElementById('toastundo').style.display = noUndo?'none':'block';
+  undoAction = noUndo ? null : (onUndo || undoLast);
   t.classList.add('on'); clearTimeout(toastTimer);
   toastTimer=setTimeout(hideToast, 6200);
 }
@@ -761,8 +770,17 @@ function moveRank(name, dir){
   const i = list.findIndex(x=>x.n===name); if(i<0) return;
   const j = dir==='top' ? 0 : i+dir;
   if(j<0 || j>=list.length) return;
+  /* snapshot before committing — commitOrder renumbers the whole position,
+     so restoring the whole map is what actually reverses the move */
+  const before = Object.assign({}, ranks);
+  const from = posLabel(p.p)+(i+1), to = posLabel(p.p)+(j+1);
   list.splice(i,1); list.splice(j,0,p);
   commitOrder(p.p, list);
+  showToast(p.n+' <em>'+from+' → '+to+'</em>', true, false, ()=>{
+    ranks = before; LS.set('ff_ranks', ranks); hideToast(); render();
+    showToast('Moved back to '+from, false, true);
+  });
+  if(navigator.vibrate) try{navigator.vibrate(6)}catch(e){}
 }
 function renderRanks(){
   document.getElementById('rankchips').innerHTML =
@@ -785,19 +803,25 @@ function renderRanks(){
     if(k==='rec')  return p.rec??'—';
     if(k==='tsh')  return p.tsh!=null? Math.round(p.tsh*100)+'%' : '—';
   };
-  const hasActions = cmpMode || (rankEdit && rankSort==='mine');
+  const editing = rankEdit && rankSort==='mine';
   const thead = '<tr><th class="namecell">Player</th>'+
     cols.map(([k,l])=>'<th'+(rankSort===k?' class="on"':'')+' data-rsort="'+k+'">'+l+'</th>').join('')+
-    (hasActions ? '<th class="actcell"></th>' : '')+'</tr>';
+    (cmpMode ? '<th class="actcell"></th>' : '')+'</tr>';
   const rows = list.map(p=>{
-    const moveBtns = (rankEdit && rankSort==='mine') ?
-      '<button class="rbtn sm up" data-mv="'+esc(p.n)+'" data-d="-1">▲</button>'+
-      '<button class="rbtn sm down" data-mv="'+esc(p.n)+'" data-d="1">▼</button>' : '';
     const pickBtn = cmpMode ? '<button class="rbtn sm'+(cmp.includes(p.n)?' sel':'')+'" data-pick="'+esc(p.n)+'">'+(cmp.includes(p.n)?'✓':'⊕')+'</button>' : '';
+    /* in edit mode the arrows sit beside the rank they change, rather than
+       across the table where the connection to the number isn't obvious */
+    const rankCell = editing
+      ? '<td class="rankcell"><div class="rkedit">'+
+          '<button class="rbtn sm up" data-mv="'+esc(p.n)+'" data-d="-1">▲</button>'+
+          '<span class="rknum">'+cellVal(p,'mine')+'</span>'+
+          '<button class="rbtn sm down" data-mv="'+esc(p.n)+'" data-d="1">▼</button>'+
+        '</div></td>'
+      : '<td class="rankcell">'+cellVal(p,'mine')+'</td>';
     return '<tr class="'+(cmp.includes(p.n)?'selrow':'')+'">'+
       '<td class="namecell rmain" data-n="'+esc(p.n)+'"><div class="rname">'+p.n+'</div></td>'+
-      cols.map(([k])=>'<td'+(k==='mine'?' class="rankcell"':'')+'>'+cellVal(p,k)+'</td>').join('')+
-      (pickBtn||moveBtns ? '<td class="actcell">'+pickBtn+moveBtns+'</td>' : '')+
+      cols.map(([k])=> k==='mine' ? rankCell : '<td>'+cellVal(p,k)+'</td>').join('')+
+      (pickBtn ? '<td class="actcell">'+pickBtn+'</td>' : '')+
     '</tr>';
   }).join('');
   document.getElementById('ranklist').innerHTML = list.length ?
@@ -1050,7 +1074,7 @@ document.addEventListener('click', e=>{
   if(t.dataset.f){ filter=t.dataset.f; renderChips(); renderList(); return; }
   if(t.dataset.s){ sortMode = {vorp:'adp', adp:'mine', mine:'ppg', ppg:'vorp'}[sortMode]; renderChips(); renderList(); return; }
   if(t.id==='scrim'){ closeSheet(); return; }
-  if(t.id==='toastundo'){ undoLast(); return; }
+  if(t.id==='toastundo'){ const act=undoAction; undoAction=null; (act||undoLast)(); return; }
   if(t.id==='undorow'){ undoLast(); return; }
   if(t.dataset.cp){ customPos=t.dataset.cp; renderList(); return; }
   if(t.dataset.cmp){ cmpMode=!cmpMode; if(!cmpMode) cmp=[]; renderChips(); renderRanks(); renderTray(); renderList(); return; }
