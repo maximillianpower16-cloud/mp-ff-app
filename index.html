@@ -43,10 +43,15 @@ input{font-size:16px}
 .pip.minedone{background:var(--amber);opacity:.35;box-shadow:none}
 
 /* ---------- search ---------- */
-#searchwrap{position:sticky;top:0;z-index:30;padding:9px 12px;background:var(--ink);border-bottom:1px solid var(--line)}
-#search{width:100%;padding:11px 13px;border-radius:11px;background:var(--surface);border:1px solid var(--line);
+#searchwrap{position:sticky;top:0;z-index:30;padding:9px 12px;background:var(--ink);border-bottom:1px solid var(--line);
+  display:flex;gap:8px;align-items:center}
+#search{flex:1;min-width:0;padding:11px 13px;border-radius:11px;background:var(--surface);border:1px solid var(--line);
   color:var(--text);font-size:16px;font-weight:500}
 #search::placeholder{color:var(--dim)}
+#historybtn{width:44px;height:44px;flex:0 0 auto;border-radius:11px;background:var(--surface);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;color:var(--muted)}
+#historybtn svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#historybtn:active{background:var(--surface2);color:var(--text)}
 
 /* ---------- chips ---------- */
 .chips{display:flex;gap:6px;padding:9px 12px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
@@ -225,7 +230,9 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 
 <!-- DRAFT -->
 <div class="view on" id="v-draft">
-  <div id="searchwrap"><input id="search" placeholder="Search player…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></div>
+  <div id="searchwrap"><input id="search" placeholder="Search player…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <button id="historybtn" aria-label="History"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></button>
+  </div>
   <div id="recbox"></div>
   <div class="chips" id="chips"></div>
   <div id="list"></div>
@@ -243,11 +250,6 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
   <div id="needs"></div>
 </div>
 
-<!-- LOG -->
-<div class="view" id="v-log">
-  <div class="runs" id="runs"></div>
-  <div id="log"></div>
-</div>
 
 <!-- SETTINGS -->
 <div class="view" id="v-set">
@@ -271,7 +273,6 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
   <button class="tab on" data-v="draft"><span class="tabi"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18"/></svg></span>Draft</button>
   <button class="tab" data-v="ranks"><span class="tabi"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h9M5 18h5"/></svg></span>Ranks</button>
   <button class="tab" data-v="team"><span class="tabi"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6 .8-4.4 4.2 1.1 6.1L12 16.8 6.7 19.7l1.1-6.1L3.4 9.4l6-.8z"/></svg></span>Team</button>
-  <button class="tab" data-v="log"><span class="tabi"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span>Log</button>
   <button class="tab" data-v="set"><span class="tabi"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.4"/><circle cx="15" cy="17" r="2.4"/></svg></span>Setup</button>
 </div>
 
@@ -795,21 +796,30 @@ function renderTeam(){
   document.getElementById('needs').innerHTML=h;
 }
 
-function renderLog(){
+let historyOpen = false;
+function historyHTML(){
   const recent = picks.slice(-cfg.teams);
   const counts={QB:0,RB:0,WR:0,TE:0};
   recent.forEach(p=>{ const pl=byName[p.n]; if(pl&&counts[pl.p]!=null) counts[pl.p]++; });
   const max=Math.max(1,...Object.values(counts));
   const cols={QB:'var(--qb)',RB:'var(--rb)',WR:'var(--wr)',TE:'var(--te)'};
-  document.getElementById('runs').innerHTML='<h3>Last '+recent.length+' picks by position</h3>'+
+  let h = '<div class="shead"><div class="sname">History</div></div>';
+  h += '<div class="runs"><h3>Last '+recent.length+' picks by position</h3>'+
     Object.keys(counts).map(k=>'<div class="runbar"><div class="runlab">'+k+'</div>'+
       '<div class="runtrack"><div class="runfill" style="width:'+(counts[k]/max*100)+'%;background:'+cols[k]+'"></div></div>'+
-      '<div class="runn">'+counts[k]+'</div></div>').join('');
-  document.getElementById('log').innerHTML = picks.length?
+      '<div class="runn">'+counts[k]+'</div></div>').join('')+'</div>';
+  h += picks.length?
     picks.map((p,i)=>'<div class="logrow"><div class="logpick">'+fmtPick(i+1)+'</div>'+
       '<div class="logname'+(p.mine?' mine':'')+'">'+p.n+(p.mine?' ★':'')+'</div>'+
       (i===picks.length-1?'<button class="mine-btn" id="undorow">↺</button>':'')+'</div>').reverse().join('')
     : '<div class="empty-state">No picks yet. Tap a player to knock him off the board, or ＋ if you took him.</div>';
+  return h;
+}
+function openHistory(){
+  historyOpen = true;
+  document.getElementById('sheetbody').innerHTML = historyHTML();
+  document.getElementById('sheet').classList.add('on');
+  document.getElementById('scrim').classList.add('on');
 }
 
 function renderSet(){
@@ -829,7 +839,8 @@ function renderSet(){
     'Player data: nflverse 2025 · FantasyPros consensus (Aug 24) · FTN O-line. No bye weeks, and no DEF or K projections \u2014 search a name and add those manually.';
 }
 
-function render(){ renderClock(); renderRecs(); renderChips(); renderList(); renderRanks(); renderTray(); renderTeam(); renderLog(); }
+function render(){ renderClock(); renderRecs(); renderChips(); renderList(); renderRanks(); renderTray(); renderTeam();
+  if(historyOpen) document.getElementById('sheetbody').innerHTML = historyHTML(); }
 
 /* ---------- sheet ---------- */
 function openSheet(name){
@@ -856,7 +867,7 @@ function openSheet(name){
   document.getElementById('sheet').classList.add('on');
   document.getElementById('scrim').classList.add('on');
 }
-function closeSheet(){ document.getElementById('sheet').classList.remove('on'); document.getElementById('scrim').classList.remove('on'); }
+function closeSheet(){ historyOpen=false; document.getElementById('sheet').classList.remove('on'); document.getElementById('scrim').classList.remove('on'); }
 
 /* ---------- events ---------- */
 document.addEventListener('click', e=>{
@@ -866,6 +877,7 @@ document.addEventListener('click', e=>{
   const takeBtn=t.closest('[data-take]');
   if(takeBtn){ e.stopPropagation(); draftPlayer(takeBtn.dataset.take, false); return; }
   if(t.closest('[data-toggle-rec]')){ recCollapsed=!recCollapsed; LS.set('ff_reccollapsed', recCollapsed); renderRecs(); return; }
+  if(t.closest('#historybtn')){ openHistory(); return; }
   const rmain=t.closest('.rmain');
   if(rmain && rmain.dataset.n){ cmpMode? toggleCmp(rmain.dataset.n) : openSheet(rmain.dataset.n); return; }
   const row=t.closest('.row,.recrow');
