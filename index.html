@@ -470,6 +470,9 @@ function doImportText(text, filename){
 
 /* ---------- draft math ---------- */
 const fmtPick = o => o? (Math.floor((o-1)/cfg.teams)+1)+'.'+String(((o-1)%cfg.teams)+1).padStart(2,'0') : '—';
+/* per-game averages display to one decimal; the stored value keeps full
+   precision so sorting and totals stay exact */
+const fmt1 = v => (typeof v === 'number') ? v.toFixed(1) : '—';
 const myPickInRound = r => (r%2===1) ? cfg.slot : cfg.teams+1-cfg.slot;
 function myPicks(){ const a=[]; for(let r=1;r<=cfg.rounds;r++) a.push((r-1)*cfg.teams + myPickInRound(r)); return a; }
 const currentPick = ()=> picks.length+1;
@@ -645,7 +648,7 @@ function renderRecs(){
   const head = '<div class="rechead" data-toggle-rec="1"><span>'+(onClock?'Take one of these':'If the pick came to you now')+'</span><span>'+chev+' '+fmtPick(cur)+'</span></div>';
   if(recCollapsed){ box.innerHTML = '<div class="rec">'+head+'</div>'; return; }
   const rows = top.map(t=>{
-    const why = [Math.round(t.pa*100)+'% to last till '+fmtPick(nextNextMine()), (t.p.ppg??'—')+' ppg'];
+    const why = [Math.round(t.pa*100)+'% to last till '+fmtPick(nextNextMine()), fmt1(t.p.ppg)+' ppg'];
     return '<div class="recrow" data-n="'+esc(t.p.n)+'">'+
       '<div class="posc p'+t.p.p+'">'+posLabel(t.p.p)+(mrOf(t.p)||'')+'</div>'+
       '<div class="recmain"><div class="recname">'+t.p.n+' <span style="color:var(--dim);font-weight:600;font-size:12px">'+(t.p.t||'FA')+'</span></div>'+
@@ -690,7 +693,7 @@ function renderList(){
     html+='<div class="row'+(gone.has(p.n)?' gone':'')+(cmp.includes(p.n)?' selrow':'')+'" data-n="'+esc(p.n)+'">'+
       '<div class="posc p'+p.p+'">'+posLabel(p.p)+(rank||'')+'</div>'+
       '<div class="pmain"><div class="pname">'+p.n+(p.note?'<span class="dot"></span>':'')+'</div>'+
-      '<div class="pmeta">'+fmtPick(p.adp)+' <em>ADP</em> · '+(p.ppg??'—')+' <em>ppg</em>'+
+      '<div class="pmeta">'+fmtPick(p.adp)+' <em>ADP</em> · '+fmt1(p.ppg)+' <em>ppg</em>'+
       (pt?' · <em>T</em>'+pt:'')+(pa!=null&&!gone.has(p.n)?' · <em>'+pa+'% back</em>':'')+'</div></div>'+
       '<div class="pvorp '+(v>0?'pos-v':'neg-v')+'">'+(v??'—')+'<span>VORP</span></div>'+
       (gone.has(p.n) ? '' :
@@ -761,9 +764,9 @@ function renderRanks(){
   const cellVal = (p,k)=>{
     if(k==='mine') return mrOf(p)??'—';
     if(k==='adp')  return fmtPick(p.adp);
-    if(k==='ppg')  return p.ppg??'—';
-    if(k==='ly')   return p.lyPPG??'—';
-    if(k==='l8')   return p.l8PPG??'—';
+    if(k==='ppg')  return fmt1(p.ppg);
+    if(k==='ly')   return fmt1(p.lyPPG);
+    if(k==='l8')   return fmt1(p.l8PPG);
     if(k==='vorp') return vorp(p)??'—';
     if(k==='car')  return p.car??'—';
     if(k==='rec')  return p.rec??'—';
@@ -869,7 +872,7 @@ function slotCard(s, fullWidth){
     '</div>' : '';
   return '<div class="slot'+(s.p?'':' empty')+'"'+(fullWidth?' style="grid-column:1 / -1"':'')+'>'+
     '<div class="slotlab">'+s.lab+'</div>'+
-    (s.p? '<div class="slotname">'+s.p.n+'</div><div class="slotmeta">'+(s.p.t||'')+' · '+(s.p.ppg??'—')+' ppg · '+(vorp(s.p)??'—')+' vorp</div>'+arrows
+    (s.p? '<div class="slotname">'+s.p.n+'</div><div class="slotmeta">'+(s.p.t||'')+' · '+fmt1(s.p.ppg)+' ppg · '+(vorp(s.p)??'—')+' vorp</div>'+arrows
         : '<div class="slotname" style="color:var(--dim);font-weight:600">—</div>')+'</div>';
 }
 /* pairs same-label starter slots together (so e.g. the two RB spots sit
@@ -895,7 +898,7 @@ function renderTeam(){
   const need = slots.filter(s=>!s.p).map(s=>s.lab);
   let h='<div class="tierband">Bench</div><div class="slots">'+bench.map(s=>slotCard(s,false)).join('')+'</div>';
   if(extra.length) h+='<div class="tierband">Extra (beyond bench)</div>'+extra.map(p=>
-    '<div class="logrow"><div class="logpick">'+p.p+'</div><div class="logname">'+p.n+'</div><div class="pmeta">'+(p.ppg??'—')+' ppg</div></div>').join('');
+    '<div class="logrow"><div class="logpick">'+p.p+'</div><div class="logname">'+p.n+'</div><div class="pmeta">'+fmt1(p.ppg)+' ppg</div></div>').join('');
   h+='<div class="runs"><h3>Still to fill</h3><div style="font-size:14px;font-weight:600;line-height:1.5">'+
      (need.length? need.join(' · ') : 'Starting lineup is complete.')+'</div></div>';
   document.getElementById('needs').innerHTML=h;
@@ -993,8 +996,8 @@ function openSheet(name){
     (posTier(p)?' · tier '+posTier(p):'')+(p.bye?' · bye '+p.bye:'')+(p.flag?' · '+p.flag:'')+'</div></div>';
   if(p.note) h+='<div class="snote">'+p.note+(p.dlt?' <b>('+(p.dlt>0?'+':'')+p.dlt+' proj pts)</b>':'')+'</div>';
   h+='<div class="grid">'+
-    stat(v??'—','VORP')+stat(p.ppg??'—','proj ppg')+stat(p.pts??'—','proj pts')+
-    stat(p.lyPPG??'—','last yr ppg')+stat(p.l8PPG??'—','last 8 ppg')+stat(p.pg??'—','proj games')+
+    stat(v??'—','VORP')+stat(fmt1(p.ppg),'proj ppg')+stat(p.pts??'—','proj pts')+
+    stat(fmt1(p.lyPPG),'last yr ppg')+stat(fmt1(p.l8PPG),'last 8 ppg')+stat(p.pg??'—','proj games')+
     stat(nn?Math.round(pAvail(p,nn)*100)+'%':'—','back at '+fmtPick(nn))+
     stat(gone?'—':waitCost(p),'cost to wait')+stat(p.ol??'—','O-line')+
     stat(p.tsh!=null?(p.tsh*100).toFixed(1)+'%':'—','proj tgt shr')+stat(p.car??'—','proj carries')+stat(p.age??'—','age')+
