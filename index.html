@@ -708,7 +708,7 @@ function renderRanks(){
     RANK_SORTS.map(([k,l])=>'<button class="chip'+(rankSort===k?' on':'')+'" data-rsort="'+k+'">'+l+'</button>').join('');
   const list = displayRankList(rankPos).slice(0,80);
   document.getElementById('ranklist').innerHTML = list.map((p)=>{
-    const v=vorp(p), pt=posTier(p), rank=mrOf(p);
+    const v=vorp(p), rank=mrOf(p);
     const moveBtns = (rankEdit && rankSort==='mine') ?
       '<button class="rbtn up" data-mv="'+esc(p.n)+'" data-d="-1">▲</button>'+
       '<button class="rbtn down" data-mv="'+esc(p.n)+'" data-d="1">▼</button>' : '';
@@ -718,7 +718,7 @@ function renderRanks(){
     return '<div class="rankrow'+(cmp.includes(p.n)?' selrow':'')+'">'+
       '<div class="rnum">'+posLabel(rankPos)+(rank??'—')+'</div>'+
       '<div class="rmain" data-n="'+esc(p.n)+'"><div class="rname">'+p.n+'</div>'+
-        '<div class="rmeta">ADP '+fmtPick(p.adp)+' · '+(p.ppg??'—')+' ppg · '+(v??'—')+' vorp'+(pt?' · T'+pt:'')+extra+'</div></div>'+
+        '<div class="rmeta">ADP '+fmtPick(p.adp)+' · '+(p.ppg??'—')+' ppg · '+(v??'—')+' vorp'+extra+'</div></div>'+
       (cmpMode ? '<button class="rbtn'+(cmp.includes(p.n)?' sel':'')+'" data-pick="'+esc(p.n)+'">'+(cmp.includes(p.n)?'✓':'⊕')+'</button>' : '')+
       moveBtns+
     '</div>';
