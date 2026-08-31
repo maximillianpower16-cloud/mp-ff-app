@@ -255,6 +255,13 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 .setrow label{font-size:14px;font-weight:600}
 .setrow input{width:74px;padding:8px 10px;border-radius:9px;background:var(--ink);border:1px solid var(--line);color:var(--text);
   text-align:center;font-family:var(--mono);font-weight:600}
+.addrow{display:flex;gap:7px;margin-bottom:10px}
+.addfield{flex:1;min-width:0;padding:9px 10px;border-radius:9px;background:var(--ink);border:1px solid var(--line);
+  color:var(--text);font-size:14px;font-family:var(--mono)}
+.addfield::placeholder{color:var(--dim);font-family:var(--sans);font-size:12.5px}
+.ownrow{display:flex;align-items:center;gap:10px;padding:9px 18px;border-bottom:1px solid rgba(42,59,71,.5)}
+.ownrow .nm{flex:1;font-size:14px;font-weight:650}
+.ownrow .meta{font-family:var(--mono);font-size:11px;color:var(--muted)}
 .fineprint{padding:14px 18px 4px;font-size:11px;line-height:1.5;color:var(--dim)}
 .view{display:none}.view.on{display:block}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -302,6 +309,7 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 <div class="view" id="v-set">
   <div id="setfields"></div>
   <div id="datastatus"></div>
+  <div id="ownlist"></div>
   <div style="padding:0 18px 6px"><div class="slotlab" style="margin-bottom:7px">Upload a FantasyPros CSV export</div>
     <div style="font-size:11.5px;color:var(--dim);line-height:1.4;margin-bottom:9px">Rankings, ADP, or projections export — columns are detected automatically.</div>
     <input type="file" id="importfile" accept=".csv,text/csv" style="display:none">
@@ -342,6 +350,39 @@ let byName = {}, byKey = {};
 const SUFFIX=/\b(jr|sr|ii|iii|iv|v)\b/g;
 const nkey = s => String(s||'').toLowerCase().replace(/[.'`,\-]/g,'').replace(SUFFIX,'').replace(/\s+/g,' ').trim();
 function buildIndex(){ byName={}; byKey={}; PLAYERS.forEach(p=>{ byName[p.n]=p; byKey[nkey(p.n)]=p; }); }
+
+/* ---------- players you add yourself ----------
+   Kept separate from the shipped snapshot and re-merged on every load, so a
+   data refresh never drops them. Flagged with own:1 so they can be listed and
+   removed later. */
+let customPlayers = LS.get('ff_custom', []);
+/* Slot a player among his positional peers by ADP (or points) and renumber that
+   position. Recomputed on every load rather than persisted, so an added player
+   can never collide with a shipped player's rank after a data refresh. */
+function placeByValue(p){
+  const peers = PLAYERS.filter(x=>x.p===p.p && x!==p);
+  const at = p.adp != null ? peers.filter(x=>x.adp!=null && x.adp < p.adp).length
+           : p.pts != null ? peers.filter(x=>x.pts!=null && x.pts > p.pts).length
+           : peers.length;
+  const ordered = peers.slice().sort((a,b)=>(a.mr||9999)-(b.mr||9999));
+  ordered.splice(at, 0, p);
+  ordered.forEach((x,i)=>{ x.mr = i+1; });
+}
+function mergeCustom(){
+  const seen = new Set(PLAYERS.map(p=>nkey(p.n)));
+  const added = [];
+  customPlayers.forEach(c=>{
+    if(seen.has(nkey(c.n))) return;          // a later data refresh already carries him
+    const p = Object.assign({
+      adp:null, adpAvg:null, sd:null, tier:null, mr:null, pg:17,
+      pts:null, ppg:null, lyPPG:null, l8PPG:null, tsh:null, car:null, rec:null,
+      age:null, ol:null, bye:null, flag:null, note:null, dlt:null
+    }, c, {own:1});
+    PLAYERS.push(p); seen.add(nkey(p.n)); added.push(p);
+  });
+  added.forEach(placeByValue);
+}
+mergeCustom();
 buildIndex();
 
 /* position-specific tiers: renumber each position's own tier boundaries to 1,2,3… */
@@ -617,6 +658,37 @@ function draftCustom(name, mine){
   render(); showToast((mine?'You drafted ':'')+name+' ('+posLabel(customPos)+')', mine);
   if(navigator.vibrate) try{navigator.vibrate(mine?[12,40,12]:8)}catch(e){}
 }
+/* add a real, rankable player — projections optional, so a breaking-news
+   handcuff can go on the board immediately and be filled in later */
+function addPlayer(name, pos, team, pts, adpPick){
+  name = String(name||'').trim();
+  if(!name) return;
+  if(byKey[nkey(name)]){ showToast('<em>'+name+' is already on the board</em>', false, true); return; }
+  const rec = {n:name, p:pos, t:(team||'').trim().toUpperCase()};
+  if(pts != null)     { rec.pts = pts; rec.ppg = +(pts/17).toFixed(2); }
+  if(adpPick != null) { rec.adp = adpPick; rec.adpAvg = adpPick; }
+  customPlayers.push(rec);
+  LS.set('ff_custom', customPlayers);
+  mergeCustom(); buildIndex(); buildPosTiers();
+  placeByValue(byKey[nkey(name)]);
+  REP = replacement();
+  query=''; const s=document.getElementById('search'); if(s) s.value='';
+  const cs=document.getElementById('clearsearch'); if(cs) cs.style.display='none';
+  render(); renderSet();
+  showToast('Added <em>'+name+' · '+posLabel(pos)+(rec.t?' '+rec.t:'')+'</em>', true, false, ()=>{
+    removePlayer(name); showToast('Removed '+name, false, true);
+  });
+}
+function removePlayer(name){
+  customPlayers = customPlayers.filter(c=>nkey(c.n)!==nkey(name));
+  LS.set('ff_custom', customPlayers);
+  const i = PLAYERS.findIndex(p=>nkey(p.n)===nkey(name) && p.own);
+  if(i>=0) PLAYERS.splice(i,1);
+  const j = picks.findIndex(x=>nkey(x.n)===nkey(name));
+  if(j>=0){ picks.splice(j,1); save(); }
+  buildIndex(); buildPosTiers(); REP = replacement();
+  render(); renderSet();
+}
 function undoLast(){
   if(!picks.length) return;
   const p = picks.pop(); REP=replacement(); save(); hideToast(); render();
@@ -743,11 +815,19 @@ function customHTML(q){
     '<div style="padding:12px 13px"><div style="font-size:15px;font-weight:700;margin-bottom:9px">'+q+'</div>'+
     '<div class="chips" style="padding:0 0 11px;margin:0">'+
       opts.map(o=>'<button class="chip'+(customPos===o?' on':'')+'" data-cp="'+o+'">'+posLabel(o)+'</button>').join('')+
-    '</div><div class="acts" style="padding:0">'+
+    '</div>'+
+    '<div class="addrow">'+
+      '<input id="addteam" class="addfield" placeholder="Team" maxlength="4" autocapitalize="characters" autocomplete="off">'+
+      '<input id="addpts" class="addfield" placeholder="Proj pts" inputmode="decimal" autocomplete="off">'+
+      '<input id="addadp" class="addfield" placeholder="ADP pick" inputmode="numeric" autocomplete="off">'+
+    '</div>'+
+    '<div class="acts" style="padding:0 0 9px"><button class="act mine" data-addboard="'+esc(q)+'">Add to board</button></div>'+
+    '<div class="acts" style="padding:0">'+
       '<button class="act taken" data-addtaken="'+esc(q)+'">Taken</button>'+
       '<button class="act mine" data-addmine="'+esc(q)+'">I drafted him</button>'+
     '</div><div style="font-size:11px;color:var(--dim);margin-top:10px;line-height:1.45">'+
-      'Manually added players like this have no projections, so they carry no VORP \u2014 they just fill the slot and keep the pick clock right.'+
+      '<b>Add to board</b> puts him in the rankings for good. Team and projected points are optional \u2014 without points he has no VORP, but you can still rank and draft him. '+
+      '<b>Taken</b> / <b>I drafted him</b> just log the pick without adding him.'+
     '</div></div></div>';
 }
 /* ---------- my rankings (manual, editable) ---------- */
@@ -991,6 +1071,18 @@ function renderSet(){
     (m.matched!=null? ' <br><b>Last update:</b> '+m.matched+' matched, '+m.added+' added':'')+
     '<br><br>The app checks <b>data/players.json</b> on load — a GitHub Action rewrites that file every morning. '+
     'If it is missing or you are offline, the built-in snapshot is used and nothing breaks.</div>';
+  const own=document.getElementById('ownlist');
+  own.innerHTML = customPlayers.length
+    ? '<div class="tierband">Players you added</div>'+customPlayers.map(c=>{
+        const p=byKey[nkey(c.n)];
+        const bits=[posLabel(c.p)+(c.t?' · '+c.t:'')];
+        if(p&&p.pts!=null) bits.push(p.pts+' pts');
+        if(p&&p.adp!=null) bits.push('ADP '+fmtPick(p.adp));
+        return '<div class="ownrow"><div class="nm">'+c.n+'</div>'+
+               '<div class="meta">'+bits.join(' · ')+'</div>'+
+               '<button class="rbtn sm down" data-removeown="'+esc(c.n)+'">\u2715</button></div>';
+      }).join('')
+    : '';
   const draftFields=[['teams','Teams'],['slot','My draft slot'],['rounds','Rounds']];
   const slotFields=[['QB','QB slots'],['RB','RB slots'],['WR','WR slots'],['TE','TE slots'],['FLEX','FLEX'],['SF','SUPERFLEX'],['DST','DEF slots'],['BENCH','Bench spots']];
   const rowHTML = ([k,l])=>'<div class="setrow"><label>'+l+'</label><input type="number" inputmode="numeric" data-cfg="'+k+'" value="'+cfg[k]+'"></div>';
@@ -1126,6 +1218,13 @@ document.addEventListener('click', e=>{
   if(t.dataset.mv){ moveRank(t.dataset.mv, parseInt(t.dataset.d,10)); return; }
   if(t.dataset.rmv){ moveMyOrder(t.dataset.rmv, parseInt(t.dataset.rd,10)); return; }
   if(t.id==='importfilebtn'){ document.getElementById('importfile').click(); return; }
+  if(t.dataset.addboard){
+    const num=id=>{ const el=document.getElementById(id); if(!el||!el.value.trim()) return null;
+                    const v=parseFloat(el.value.replace(/[^0-9.]/g,'')); return isNaN(v)?null:v; };
+    const teamEl=document.getElementById('addteam');
+    addPlayer(t.dataset.addboard, customPos, teamEl?teamEl.value:'', num('addpts'), num('addadp'));
+    return; }
+  if(t.dataset.removeown){ const n=t.dataset.removeown; removePlayer(n); showToast('Removed '+n, false, true); return; }
   if(t.dataset.addtaken){ draftCustom(t.dataset.addtaken,false); return; }
   if(t.dataset.addmine){ draftCustom(t.dataset.addmine,true); return; }
   if(t.id==='resetbtn'){
