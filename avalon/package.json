@@ -1,0 +1,15 @@
+{
+  "name": "avalon",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The Resistance: Avalon for a group of phones — one host, one link, no cards.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {}
+}
