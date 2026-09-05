@@ -1,5 +1,7 @@
 # Avalon
 
+[![Avalon tests](https://github.com/maximillianpower16-cloud/mp-ff-app/actions/workflows/avalon-tests.yml/badge.svg)](https://github.com/maximillianpower16-cloud/mp-ff-app/actions/workflows/avalon-tests.yml)
+
 The Resistance: Avalon for a group of phones. One person creates a room, shares
 a link, everyone else joins from it. No cards, no app store, no accounts — just
 a display name.
@@ -21,24 +23,54 @@ group that isn't in the room with you, deploy it (below).
 
 ## Deploy
 
-Any host that runs a Node process works: Render, Railway, Fly.io, Heroku, a
-$5 VPS. There is nothing to configure.
+Everything is pre-configured; pick a host and click.
 
-- **Build command:** none
-- **Start command:** `npm start` (the app reads `PORT` from the environment)
-- **Root directory:** `avalon`
+**Render** — free tier, no card. The blueprint at the repo root already sets the
+root directory, start command and health check:
 
-Two constraints worth knowing:
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/maximillianpower16-cloud/mp-ff-app)
+
+**Fly.io** — `fly.toml` and the `Dockerfile` are in this directory:
+
+```
+cd avalon
+fly launch --copy-config --no-deploy    # pick a name
+fly deploy
+```
+
+**Railway** — new project from this repo, set the root directory to `avalon`.
+`railway.json` supplies the rest.
+
+**Any VPS with Docker:**
+
+```
+cd avalon && docker compose up -d       # then reverse-proxy port 3000
+```
+
+Doing it by hand anywhere else: **build command** none, **start command**
+`npm start`, **root directory** `avalon`. The app reads `PORT` from the
+environment and answers a health check at `/api/health`.
+
+Three constraints worth knowing:
 
 - **It needs a real server.** GitHub Pages and other static hosts can't run
   this, because role assignment and secret-filtering happen server-side by
-  design (see below).
-- **Rooms live in memory**, with a JSON snapshot on disk (`avalon/.data/`) so a
-  restart or redeploy doesn't kill a game in progress. On a platform with an
-  ephemeral filesystem that snapshot vanishes on redeploy; a game that is
-  actively being played still survives an ordinary process restart. Set
-  `AVALON_STATE` to a path on a mounted volume if you want it to persist
-  properly. One process only — don't scale to multiple instances.
+  design (see below). That's also why the draft board at the repo root and this
+  app can't share a host.
+- **Run exactly one instance.** Rooms live in that process's memory; a second
+  replica would answer with a different game.
+- **Sleeping hosts end games.** Render's free tier suspends after ~15 minutes
+  idle and Fly stops machines under a group by default (`fly.toml` disables
+  that). Rooms snapshot to disk — `avalon/.data/rooms.json`, or wherever
+  `AVALON_STATE` points — so an ordinary restart is survivable, but a platform
+  that also wipes the filesystem is not. Mount a volume at `/data` if a game
+  must outlive a redeploy.
+
+**No live instance exists yet.** The `/room/ABCD` link players join is minted at
+runtime by whatever host you deploy to, so it's `https://<your-host>/room/ABCD`
+once one of the above is done. If you just want to play tonight and everyone is
+on the same Wi-Fi, skip all of this and run `npm start` — your phones can reach
+`http://<your-laptop-ip>:3000` directly.
 
 ## How the secrecy works
 
@@ -102,12 +134,18 @@ reclaim your seat.
 avalon/
   server.js        HTTP + Server-Sent Events, static files, room lifecycle
   game.js          all the rules, all the secrets, and viewFor() — the trust boundary
-  game.test.js     31 tests: role dealing, knowledge filtering, every win condition
+  game.test.js     32 rules tests: dealing, knowledge filtering, every win condition,
+                   plus a soak that plays 600 random games and checks the invariants
+  e2e.test.mjs     boots the server, plays a full 5-player game over HTTP (74 checks)
   public/
     index.html     app shell
     app.js         renders whatever the server says; holds no secrets
     styles.css
+  Dockerfile       also used by fly.toml and docker-compose.yml
 ```
+
+`npm test` runs both suites. CI runs them on every push that touches `avalon/`,
+repeating the rules suite five times because the deal is random.
 
 Real-time is Server-Sent Events rather than WebSockets: the game is turn-based,
 every message goes server → client, EventSource reconnects on its own after a

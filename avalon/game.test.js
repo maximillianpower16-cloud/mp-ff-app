@@ -376,6 +376,128 @@ test('the final view reveals every role', () => {
   assert.equal(view.end.merlinId, playerWithRole(room, 'merlin').id);
 });
 
+// ---------------------------------------------------------------- soak
+
+/**
+ * Play a great many games with random legal choices at every branch. This is
+ * the net for state-machine holes no hand-written case thought to try:
+ * proposals rejected two or three deep, a quest resolved by exactly the
+ * required number of fails, an assassination reached from an odd path.
+ */
+test('600 randomly played games all terminate in a legal state', () => {
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  let evilWins = 0;
+  let goodWins = 0;
+  let byRejects = 0;
+  let byFails = 0;
+  let byAssassin = 0;
+
+  for (let g = 0; g < 600; g++) {
+    const n = 5 + Math.floor(Math.random() * 6);
+    const options = {
+      percival: Math.random() < 0.7,
+      morgana: Math.random() < 0.6,
+      mordred: Math.random() < 0.5,
+      oberon: Math.random() < 0.3,
+    };
+    // Drop optional evil roles until the composition is legal.
+    const room = roomWith(n, options);
+    for (const key of ['oberon', 'mordred', 'morgana']) {
+      if (!game.validateStart(room)) break;
+      room.options[key] = false;
+    }
+    assert.equal(game.validateStart(room), null, `n=${n} ${JSON.stringify(room.options)}`);
+    assert.equal(game.startGame(room).error, undefined);
+    ackAll(room);
+
+    for (let step = 0; step < 400 && room.phase !== game.PHASE.END; step++) {
+      switch (room.phase) {
+        case game.PHASE.PROPOSAL: {
+          const leader = game.leaderId(room);
+          const size = game.trackFor(n)[room.questIndex];
+          const chosen = game.shuffle(ids(room)).slice(0, size);
+          for (const id of chosen) {
+            assert.equal(
+              game.applyAction(room, leader, { type: 'toggleTeamMember', targetId: id }).error,
+              undefined
+            );
+          }
+          assert.equal(room.team.length, size);
+          assert.equal(game.applyAction(room, leader, { type: 'proposeTeam' }).error, undefined);
+          break;
+        }
+        case game.PHASE.VOTE: {
+          for (const p of room.players) {
+            game.applyAction(room, p.id, { type: 'vote', approve: Math.random() < 0.55 });
+          }
+          break;
+        }
+        case game.PHASE.QUEST: {
+          for (const id of room.team) {
+            const evil = game.ROLES[room.roles[id]].side === 'evil';
+            game.applyAction(room, id, { type: 'questAction', success: evil ? Math.random() < 0.5 : true });
+          }
+          break;
+        }
+        case game.PHASE.ASSASSIN: {
+          const assassin = playerWithRole(room, 'assassin');
+          const view = game.viewFor(room, assassin.id);
+          assert.ok(view.assassin.candidates.length > 0, 'the Assassin always has a target');
+          game.applyAction(room, assassin.id, {
+            type: 'assassinate',
+            targetId: pick(view.assassin.candidates).id,
+          });
+          break;
+        }
+        default:
+          // Every reveal gate: sometimes everyone acks, sometimes the host skips.
+          if (Math.random() < 0.5) ackAll(room);
+          else game.applyAction(room, room.hostId, { type: 'forceContinue' });
+      }
+
+      // Invariants that must hold at every single step of every game.
+      assert.ok(room.rejects <= game.MAX_REJECTS, 'reject counter never exceeds five');
+      assert.ok(room.questResults.length <= 5, 'never more than five quests');
+      assert.ok(room.questIndex <= 4, 'never proposes a sixth quest');
+      assert.ok(room.team.length <= game.trackFor(n)[Math.min(room.questIndex, 4)], 'team never overfills');
+      // A decisive third result is recorded during questReveal and acted on
+      // once everyone has seen it, so that gate is a legal place to be.
+      const decided = [game.PHASE.QUEST_REVEAL, game.PHASE.ASSASSIN, game.PHASE.END];
+      assert.ok(
+        room.questResults.filter((r) => r.passed).length < 3 || decided.includes(room.phase),
+        'a third success always stops the quests'
+      );
+      assert.ok(
+        room.questResults.filter((r) => !r.passed).length < 3 ||
+          room.phase === game.PHASE.QUEST_REVEAL ||
+          room.phase === game.PHASE.END,
+        'a third failure ends the game as soon as it is seen'
+      );
+    }
+
+    assert.equal(room.phase, game.PHASE.END, `game ${g} (n=${n}) never finished`);
+    assert.ok(room.winner === 'good' || room.winner === 'evil', 'somebody wins');
+    assert.ok(room.winReason, 'the win is explained');
+
+    if (room.winner === 'evil') evilWins++;
+    else goodWins++;
+    if (/rejected in a row/.test(room.winReason)) byRejects++;
+    if (/Three quests failed/.test(room.winReason)) byFails++;
+    if (/Assassin named/.test(room.winReason)) byAssassin++;
+
+    // The end-of-game view must show everything, and nothing before it did.
+    const view = game.viewFor(room, ids(room)[0]);
+    for (const p of view.players) assert.ok(p.role, 'every role is revealed at the end');
+  }
+
+  // Not assertions about balance — just proof the run actually exercised all
+  // three ways a game can end rather than looping through one of them.
+  assert.ok(byRejects > 0, 'some games ended on five rejections');
+  assert.ok(byFails > 0, 'some games ended on three failed quests');
+  assert.ok(byAssassin > 0, 'some games reached the assassination');
+  assert.ok(evilWins > 0 && goodWins > 0, 'both sides won at least once');
+});
+
 // ---------------------------------------------------------------- host tools
 
 test('only the host can flip roles, start, or reset', () => {
