@@ -1,8 +1,0 @@
-.data
-node_modules
-*.log
-Dockerfile
-.dockerignore
-docker-compose.yml
-README.md
-game.test.js
