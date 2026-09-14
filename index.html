@@ -263,6 +263,18 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 .ownrow .nm{flex:1;font-size:14px;font-weight:650}
 .ownrow .meta{font-family:var(--mono);font-size:11px;color:var(--muted)}
 .fineprint{padding:14px 18px 4px;font-size:11px;line-height:1.5;color:var(--dim)}
+
+/* odds */
+.oddsin{width:100%;min-height:96px;padding:11px 12px;border-radius:11px;background:var(--ink);border:1px solid var(--line);
+  color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.55;resize:vertical}
+.oddsin::placeholder{color:var(--dim);font-family:var(--mono);font-size:12px}
+.gamecard{display:flex;align-items:center;gap:10px;padding:9px 13px;border-bottom:1px solid rgba(42,59,71,.55);font-size:12.5px}
+.gamecard .gt{font-family:var(--mono);font-size:11.5px;color:var(--muted);flex:1;min-width:0}
+.gamecard .gp{font-family:var(--mono);font-size:13px;font-weight:600;flex:0 0 auto}
+.gamecard .gp em{font-style:normal;color:var(--dim);font-size:10px;margin-left:3px}
+.oenv{font-family:var(--mono);font-size:13.5px;font-weight:600;text-align:right;flex:0 0 auto;min-width:54px}
+.oenv span{display:block;font-size:9px;color:var(--dim);font-family:var(--sans);font-weight:700;margin-top:1px;letter-spacing:.04em}
+.up-v{color:var(--mint)}.dn-v{color:var(--red)}.flat-v{color:var(--muted)}
 .view{display:none}.view.on{display:block}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -295,6 +307,14 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
 <div class="view" id="v-ranks">
   <div class="chips" id="rankchips"></div>
   <div id="ranklist"></div>
+</div>
+
+<!-- ODDS -->
+<div class="view" id="v-odds">
+  <div id="oddsinput"></div>
+  <div class="chips" id="oddschips"></div>
+  <div id="oddsgames"></div>
+  <div id="oddslist"></div>
 </div>
 
 <!-- TEAM -->
@@ -330,6 +350,7 @@ body.trayon #toast{bottom:calc(var(--tabh) + 66px)}
   <button class="tab on" data-v="draft"><span class="tabi"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18"/></svg></span>Draft</button>
   <button class="tab" data-v="team"><span class="tabi"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6 .8-4.4 4.2 1.1 6.1L12 16.8 6.7 19.7l1.1-6.1L3.4 9.4l6-.8z"/></svg></span>Team</button>
   <button class="tab" data-v="ranks"><span class="tabi"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h9M5 18h5"/></svg></span>Ranks</button>
+  <button class="tab" data-v="odds"><span class="tabi"><svg viewBox="0 0 24 24"><path d="M4 17l5-6 4 3 6.5-8"/><path d="M15 6h5v5"/></svg></span>Odds</button>
   <button class="tab" data-v="set"><span class="tabi"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.4"/><circle cx="15" cy="17" r="2.4"/></svg></span>Setup</button>
 </div>
 
@@ -1128,6 +1149,170 @@ function renderSet(){
     'Player data: nflverse 2025 · ESPN standard 1QB ADP (Sep 8, via Draft Sharks) · FantasyPros tiers/byes (Sep 3) · Mike Clay PPR projections (Sep 2) · FTN O-line. Kickers are excluded, so ADP counts only picks this league actually spends.';
 }
 
+/* ---------- odds: implied game environment ----------
+   Totals and spreads are the only market numbers that are free and posted
+   everywhere, and between them they pin each team's implied points for the
+   week: half the total, shifted half the spread. That is a statement about the
+   game, not about a player, so nothing here invents a player projection. It
+   scales the season baseline he already has by the game he is walking into. */
+const TEAM_ALIAS = {JAC:'JAX',LVR:'LV',OAK:'LV',RAI:'LV',WSH:'WAS',WFT:'WAS',ARZ:'ARI',BLT:'BAL',
+  CLV:'CLE',HST:'HOU',SD:'LAC',SDG:'LAC',STL:'LAR',LA:'LAR',GNB:'GB',KAN:'KC',NWE:'NE',NOR:'NO',
+  SFO:'SF',TAM:'TB',TAB:'TB',JAG:'JAX',NYA:'NYJ'};
+let TEAMSET = null;
+const teamSet = ()=> TEAMSET || (TEAMSET = new Set(PLAYERS.map(p=>p.t).filter(t=>t && t!=='FA')));
+const normTeam = c => { c = String(c||'').toUpperCase().replace(/[^A-Z]/g,'');
+  c = TEAM_ALIAS[c] || c; return teamSet().has(c) ? c : null; };
+
+let odds = LS.get('ff_odds', null);        // {week, raw, games:[{away,home,total,spread}]}
+let oddsView = 'waiver', oddsPos = 'ALL';
+
+/* One game per line, in whatever order a book prints it: two team codes, a
+   spread and a total. The bigger number is the total every time -- no NFL
+   spread approaches the smallest total -- and the spread belongs to whichever
+   team is named just before it, or to the home side when nothing names it. */
+function parseOdds(text){
+  const games=[], bad=[];
+  for(const raw of String(text||'').split('\n')){
+    const line = raw.trim(); if(!line) continue;
+    const toks = line.replace(/[,()]/g,' ').split(/\s+/).filter(Boolean);
+    const teams=[], nums=[];
+    toks.forEach((tk,i)=>{
+      const t = normTeam(tk);
+      if(t && !/\d/.test(tk)){ teams.push({code:t, i}); return; }
+      const n = parseFloat(tk.replace(/^[ou]/i,'').replace(/^\+/,''));
+      if(!isNaN(n)) nums.push({v:n, i});
+    });
+    if(teams.length < 2 || nums.length < 2){ bad.push(line); continue; }
+    let ti=0; nums.forEach((n,i)=>{ if(Math.abs(n.v) > Math.abs(nums[ti].v)) ti=i; });
+    const total = Math.abs(nums[ti].v);
+    const sp = nums.find((_,i)=>i!==ti);
+    const away = teams[0].code, home = teams[1].code;
+    if(away===home || total<20 || total>90){ bad.push(line); continue; }
+    // whoever is named immediately before the spread owns it
+    const named = teams.filter(t=>t.i < sp.i).pop();
+    let spreadHome = sp.v;
+    if(named && named.code===away) spreadHome = -sp.v;
+    if(Math.abs(spreadHome) > 30){ bad.push(line); continue; }
+    games.push({away, home, total, spread:spreadHome});
+  }
+  return {games, bad};
+}
+
+/* implied points per team, plus how that compares with the rest of the slate */
+function oddsTable(){
+  if(!odds || !odds.games || !odds.games.length) return null;
+  const byTeam={};
+  odds.games.forEach(g=>{
+    byTeam[g.home] = {pts:g.total/2 - g.spread/2, opp:g.away, spread:g.spread,  home:true,  total:g.total};
+    byTeam[g.away] = {pts:g.total/2 + g.spread/2, opp:g.home, spread:-g.spread, home:false, total:g.total};
+  });
+  const vals = Object.values(byTeam).map(x=>x.pts);
+  const avg  = vals.reduce((a,b)=>a+b,0) / vals.length;
+  Object.values(byTeam).forEach(x=>{
+    x.env = x.pts / avg;
+    x.oppPts = byTeam[x.opp] ? byTeam[x.opp].pts : avg;
+  });
+  return {byTeam, avg, n:odds.games.length};
+}
+
+/* Favourites run and underdogs throw, which is most of what a spread tells you
+   about how a game gets played. Small coefficients, hard caps: the line says
+   who is likely ahead and very little beyond that. */
+const SCRIPT = {RB:-0.012, QB:0.008, WR:0.008, TE:0.005, DST:-0.010};
+const scriptMult = (pos, spread) =>
+  Math.max(0.90, Math.min(1.10, 1 + (SCRIPT[pos]||0) * spread));
+
+/* A defense is priced by what it faces, not by what its own offense scores,
+   so its environment is the opponent's implied points inverted. */
+function oddsFor(p, tbl){
+  const t = tbl.byTeam[p.t];
+  if(!t) return null;                                   // bye, or not on this slate
+  const env = p.p==='DST' ? tbl.avg / Math.max(6, t.oppPts) : t.env;
+  const scr = scriptMult(p.p, t.spread);
+  const mult = env * scr;
+  const base = p.ppg;
+  return {team:t, env, scr, mult,
+          proj: base==null ? null : base*mult,
+          delta: base==null ? null : base*mult - base};
+}
+
+function renderOddsInput(){
+  const stamp = odds && odds.games.length
+    ? odds.games.length+' games'+(odds.week?' · week '+odds.week:'')+(odds.asOf?' · '+odds.asOf:'')
+    : 'nothing loaded yet';
+  document.getElementById('oddsinput').innerHTML =
+    '<div style="padding:12px 12px 0">'+
+      '<div class="addrow"><input class="addfield" id="oddsweek" inputmode="numeric" placeholder="Week" '+
+        'value="'+(odds&&odds.week?esc(odds.week):'')+'" style="flex:0 0 78px"></div>'+
+      '<textarea class="oddsin" id="oddsraw" spellcheck="false" placeholder="One game per line — away, home, spread, total:&#10;BUF @ KC -3.5 48.5&#10;DAL @ PHI -6 45&#10;SEA @ SF SEA -1.5 44">'+
+        (odds&&odds.raw?String(odds.raw).replace(/</g,'&lt;'):'')+'</textarea>'+
+      '<div class="acts" style="padding:0;margin-top:9px">'+
+        '<button class="act mine" id="oddsapply">Use these lines</button>'+
+        (odds? '<button class="act undo" id="oddsclear">Clear</button>':'')+'</div>'+
+      '<div style="font-size:11.5px;color:var(--dim);margin-top:9px;line-height:1.45">'+stamp+
+        '. The spread goes to the team named right before it, or to the home side.</div>'+
+    '</div>';
+}
+
+function renderOdds(){
+  renderOddsInput();
+  const tbl = oddsTable();
+  const games = document.getElementById('oddsgames');
+  const list  = document.getElementById('oddslist');
+  document.getElementById('oddschips').innerHTML = !tbl ? '' :
+    [['waiver','Waivers'],['target','Trade targets'],['mine','My team'],['all','All']]
+      .map(([k,l])=>'<button class="chip'+(oddsView===k?' on':'')+'" data-ov="'+k+'">'+l+'</button>').join('')
+    + ['ALL','QB','RB','WR','TE','DST'].map(k=>
+        '<button class="chip'+(oddsPos===k?' on':'')+'" data-op="'+k+'">'+(k==='ALL'?'Pos: all':posLabel(k))+'</button>').join('');
+
+  if(!tbl){
+    games.innerHTML=''; 
+    list.innerHTML = '<div class="empty-state">Paste this week’s totals and spreads above.<br><br>'+
+      'Every team’s implied points come straight out of them, which is enough to rank who is walking into the best week.</div>';
+    return;
+  }
+
+  games.innerHTML = '<div class="tierband">Implied points · slate average '+fmt1(tbl.avg)+'</div>'+
+    odds.games.map(g=>{
+      const h=tbl.byTeam[g.home], a=tbl.byTeam[g.away];
+      return '<div class="gamecard"><div class="gt">'+g.away+' @ '+g.home+
+        '  <em style="color:var(--dim)">'+(g.spread<0?g.home+' '+g.spread:g.away+' '+(-g.spread))+
+        ' · o/u '+g.total+'</em></div>'+
+        '<div class="gp">'+fmt1(a.pts)+'<em>'+g.away+'</em></div>'+
+        '<div class="gp">'+fmt1(h.pts)+'<em>'+g.home+'</em></div></div>';
+    }).join('');
+
+  const gone = new Set(picks.map(x=>x.n));
+  const mine = new Set(picks.filter(x=>x.mine).map(x=>x.n));
+  let pool = PLAYERS.filter(p=>{
+    if(oddsPos!=='ALL' && p.p!==oddsPos) return false;
+    if(p.ppg==null || !tbl.byTeam[p.t]) return false;   // no baseline, or on bye
+    if(oddsView==='waiver') return !gone.has(p.n);
+    if(oddsView==='mine')   return mine.has(p.n);
+    if(oddsView==='target') return gone.has(p.n) && !mine.has(p.n);
+    return true;
+  });
+  const rows = pool.map(p=>({p, o:oddsFor(p, tbl)}));
+  // waivers are about who scores most; the other views are about mispricing
+  if(oddsView==='waiver') rows.sort((x,y)=> y.o.proj - x.o.proj);
+  else                    rows.sort((x,y)=> y.o.delta - x.o.delta);
+
+  list.innerHTML = rows.slice(0,80).map(({p,o})=>{
+    const d = o.delta, cls = d>0.35?'up-v':(d<-0.35?'dn-v':'flat-v');
+    const t = o.team;
+    // a defense is judged by what the other side is implied to score, so that is
+    // the number worth showing on its row
+    const shown = p.p==='DST' ? t.oppPts : t.pts;
+    const lab   = p.p==='DST' ? 'implied vs' : 'implied';
+    return '<div class="row" data-n="'+esc(p.n)+'">'+
+      '<div class="posc p'+p.p+'">'+posLabel(p.p)+(mrOf(p)||'')+'</div>'+
+      '<div class="pmain"><div class="pname">'+p.n+'</div>'+
+      '<div class="pmeta">'+(t.home?'vs ':'@ ')+t.opp+' · '+fmt1(shown)+' <em>'+lab+'</em> · '+
+        fmt1(p.ppg)+' <em>base ppg</em></div></div>'+
+      '<div class="oenv '+cls+'">'+fmt1(o.proj)+'<span>'+(d>=0?'+':'')+fmt1(d)+'</span></div></div>';
+  }).join('') || '<div class="empty-state">Nobody here plays on this slate.</div>';
+}
+
 function render(){ renderClock(); renderRecs(); renderChips(); renderList(); renderRanks(); renderTray(); renderTeam();
   if(historyOpen) document.getElementById('sheetbody').innerHTML = historyHTML(); }
 
@@ -1268,10 +1453,24 @@ document.addEventListener('click', e=>{
       setTimeout(()=>{ t.dataset.armed=''; t.textContent='Reset draft'; }, 4000);
     }
     return; }
+  if(t.id==='oddsapply'){
+    const raw=document.getElementById('oddsraw').value;
+    const wk =document.getElementById('oddsweek').value.trim();
+    const {games,bad}=parseOdds(raw);
+    if(!games.length){ showToast('No games read \u2014 check the format', false, true); return; }
+    odds={week:wk, raw, games, asOf:new Date().toLocaleDateString(undefined,{month:'short',day:'numeric'})};
+    LS.set('ff_odds', odds); renderOdds();
+    showToast(games.length+' games loaded'+(bad.length?' \u2014 <em>'+bad.length+' line(s) skipped</em>':''), true, true);
+    return; }
+  if(t.id==='oddsclear'){ odds=null; LS.set('ff_odds', null); renderOdds();
+    showToast('Lines cleared', false, true); return; }
+  if(t.dataset.ov){ oddsView=t.dataset.ov; renderOdds(); return; }
+  if(t.dataset.op){ oddsPos=t.dataset.op; renderOdds(); return; }
   const tab=t.closest('.tab');
   if(tab){ document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===tab));
     document.querySelectorAll('.view').forEach(v=>v.classList.toggle('on', v.id==='v-'+tab.dataset.v));
     if(tab.dataset.v==='set') renderSet();
+    if(tab.dataset.v==='odds') renderOdds();
     if(tab.dataset.v!=='ranks' && rankEdit){ rankEdit=false; renderRanks(); }
     window.scrollTo(0,0); return; }
 });
